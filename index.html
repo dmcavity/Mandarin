@@ -89,7 +89,7 @@ body{
 .mode-btns button .zi{font-family:var(--hanzi-font);color:var(--cinnabar);margin-right:6px;font-size:16px}
 .mode-btns button:active{transform:scale(.97)}
 .review-btn{margin-top:8px;width:100%;padding:9px 0;border-radius:9px;border:1px dashed var(--cinnabar-soft);background:transparent;color:var(--cinnabar);font-size:13px;font-weight:600;cursor:pointer}
-.trouble-btn{margin-top:8px;width:100%;padding:9px 0;border-radius:9px;border:1px dashed var(--cinnabar-soft);background:transparent;color:var(--cinnabar);font-size:13px;font-weight:600;cursor:pointer}
+.review-btn{margin-top:8px;width:100%;padding:9px 0;border-radius:9px;border:1px dashed var(--cinnabar-soft);background:transparent;color:var(--cinnabar);font-size:13px;font-weight:600;cursor:pointer}
 .reset{display:block;margin:26px auto 0;background:none;border:none;color:var(--sand);font-size:12px;text-decoration:underline;cursor:pointer}
 .notice{font-size:11px;color:var(--sand);text-align:center;margin-top:16px}
 
@@ -2612,6 +2612,51 @@ function rmap(lv,md){
   R.reading=R.reading||{};R.writing=R.writing||{};
   return R[md];
 }
+/* per-word last-review timestamps (epoch ms), kept per skill like review counts */
+function rlast(lv,md){
+  store.lastrev=store.lastrev||{};
+  store.lastrev[lv]=store.lastrev[lv]||{reading:{},writing:{}};
+  const R=store.lastrev[lv];
+  R.reading=R.reading||{};R.writing=R.writing||{};
+  return R[md];
+}
+function todayStr(){
+  const d=new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+/* "Words for review": a daily weighted random sample of up to 40 SOLID words.
+   Weights favor (a) words with many past reviews — percentile-scaled 0.1→1.0,
+   hitting 1.0 at the 90th percentile — and (b) stale words — 0.1 if reviewed
+   a day ago, 1.0 if 10+ days ago (never-timestamped words count as fully
+   stale). Combined weight = frequency × staleness, sampled without
+   replacement. The sample is cached per level+mode and rebuilt each day. */
+function reviewList(lv,md,words){
+  const R=rmap(lv,md);
+  const solid=words.filter(v=>R[v[0]]==="s").map(v=>v[0]);
+  store.daily=store.daily||{};
+  const key=lv+"-"+md,today=todayStr(),cached=store.daily[key];
+  if(cached&&cached.d===today)return cached.w.filter(hz=>R[hz]==="s");
+  if(!solid.length){delete store.daily[key];return [];}
+  const RC=rcount(lv,md),RL=rlast(lv,md),now=Date.now(),n=solid.length;
+  const sorted=solid.map(hz=>RC[hz]||0).sort((a,b)=>a-b);
+  const freqW=hz=>{
+    if(n<2)return 1;
+    const pct=sorted.indexOf(RC[hz]||0)/(n-1);
+    return 0.1+0.9*Math.min(1,pct/0.9);
+  };
+  const staleW=hz=>{
+    const t=RL[hz];
+    const days=t?(now-t)/864e5:10;
+    return 0.1+0.9*Math.max(0,Math.min(1,(days-1)/9));
+  };
+  /* weighted sampling without replacement (Efraimidis–Spirakis) */
+  const pick=solid.map(hz=>({hz,k:Math.pow(Math.random(),1/(freqW(hz)*staleW(hz)))}))
+                  .sort((a,b)=>b.k-a.k)
+                  .slice(0,40).map(o=>o.hz);
+  store.daily[key]={d:today,w:pick};
+  saveStore();
+  return pick;
+}
 
 /* Persistence: prefers the Claude storage API; falls back to browser localStorage
    when the file is opened standalone (e.g. saved to the phone), so progress
@@ -2709,8 +2754,8 @@ function renderHome(){
       else if(g==="n"){ratedN++;revN+=c;}
     });
     const seenDistinct=solid+tent+ratedN;   /* distinct words rated in this mode — cannot over-count */
-    /* trouble words: reviewed 3+ times in this mode yet still not solid */
-    const trouble=words.filter(v=>{const g=R[v[0]];return (g==="t"||g==="n")&&(RC[v[0]]||0)>=3;}).length;
+    /* daily "words for review" sample drawn from the solid pile */
+    const review=reviewList(lv,homeMode,words).length;
     const notl=words.length-solid-tent;
     const pctSolid=Math.round(100*solid/words.length);   /* share of the level's words currently rated Solid */
     const avg=(tot,n)=>n?`<i>rev/word: ${(tot/n).toFixed(1)}</i>`:"";
@@ -2739,7 +2784,7 @@ function renderHome(){
         <button class="chip t" data-lv="${lv}" data-f="t" ${tent?"":"disabled"}><b>${tent}</b>Tentative${avg(revT,tent)}</button>
         <button class="chip n" data-lv="${lv}" data-f="n" ${notl?"":"disabled"}><b>${notl}</b>Not learned${avg(revN,ratedN)}</button>
       </div>
-      ${trouble?`<button class="trouble-btn" data-lv="${lv}">⚠ Study ${trouble} trouble word${trouble>1?"s":""}</button>`:""}
+      ${review?`<button class="review-btn" data-lv="${lv}">↻ ${review} word${review>1?"s":""} for review</button>`:""}
     `;
     wrap.appendChild(el);
   });
@@ -2748,7 +2793,7 @@ function renderHome(){
     if(b.disabled)return;
     startSession(+b.dataset.lv,homeMode,b.dataset.f);
   });
-  wrap.querySelectorAll(".trouble-btn").forEach(b=>b.onclick=()=>startSession(+b.dataset.lv,homeMode,"x"));
+  wrap.querySelectorAll(".review-btn").forEach(b=>b.onclick=()=>startSession(+b.dataset.lv,homeMode,"x"));
 }
 document.querySelectorAll("#mode-seg button").forEach(b=>b.onclick=()=>{
   homeMode=b.dataset.md;
@@ -2769,9 +2814,10 @@ function startSession(lv,md,filter){
   if(filter==="s")cards=cards.filter(v=>R[v[0]]==="s");
   else if(filter==="t")cards=cards.filter(v=>R[v[0]]==="t");
   else if(filter==="n")cards=cards.filter(v=>(R[v[0]]||"n")==="n");
-  else if(filter==="x"){ /* trouble: reviewed 3+ times, still not solid; hardest first */
-    cards=cards.filter(v=>{const g=R[v[0]];return (g==="t"||g==="n")&&(RC[v[0]]||0)>=3;});
-    cards=[...cards].sort((a,b)=>(RC[b[0]]||0)-(RC[a[0]]||0));
+  else if(filter==="x"){ /* today's "words for review" sample from the solid pile */
+    const dl=reviewList(lv,md,cards);
+    const byHz={};cards.forEach(c=>byHz[c[0]]=c);
+    cards=dl.map(hz=>byHz[hz]).filter(Boolean);
   }
   if(!cards.length){alert("No cards in this group — nice work!");return;}
   if(shuffleOn)cards=[...cards].sort(()=>Math.random()-0.5);
@@ -2797,7 +2843,7 @@ function endSession(){
 function updateHead(){
   $("#back-btn").style.visibility=idx>0?"visible":"hidden";
   $("#prog-bar").style.width=Math.round(100*idx/deck.length)+"%";
-  const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Trouble"}[reviewing]||"";
+  const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Review"}[reviewing]||"";
   $("#session-info").textContent=`HSK ${level} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}`;
 }
 
@@ -3183,6 +3229,7 @@ function answer(r){
   given[idx]=r;
   st.seen++;if(r==="s")st.correct++;
   rmap(level,mode)[hz]=r;
+  rlast(level,mode)[hz]=Date.now();
   sess[r]++;
   saveStore();
   idx++;
