@@ -2624,7 +2624,7 @@ function todayStr(){
   const d=new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
-/* "Words for review": a daily weighted random sample of up to 40 SOLID words.
+/* "Words for review": a daily weighted random sample of up to 25 SOLID words.
    Weights favor (a) words with many past reviews — percentile-scaled 0.1→1.0,
    hitting 1.0 at the 90th percentile — and (b) stale words — 0.1 if reviewed
    a day ago, 1.0 if 10+ days ago (never-timestamped words count as fully
@@ -2652,7 +2652,7 @@ function reviewList(lv,md,words){
   /* weighted sampling without replacement (Efraimidis–Spirakis) */
   const pick=solid.map(hz=>({hz,k:Math.pow(Math.random(),1/(freqW(hz)*staleW(hz)))}))
                   .sort((a,b)=>b.k-a.k)
-                  .slice(0,40).map(o=>o.hz);
+                  .slice(0,25).map(o=>o.hz);
   store.daily[key]={d:today,w:pick};
   saveStore();
   return pick;
