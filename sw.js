@@ -1,7 +1,7 @@
 /* Minimal offline cache for the HSK flashcard app shell.
    CDN requests (HanziWriter) pass straight through to the network — the app
    already has its own fallback if that library can't load. */
-const CACHE = "hsk-flashcards-v1";
+const CACHE = "hsk-flashcards-v2";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
