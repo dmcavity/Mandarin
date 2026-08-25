@@ -2873,8 +2873,9 @@ function renderCard(){
       <div class="hint">Say it out loud, then flip to write the character.</div>`;
   card.innerHTML=`
     <div class="corner">${ZI[level]}</div>
-    <div class="review-stat">${cardStat(hz)}</div>
-    <div class="face" id="face-front">${front}
+    <div class="face" id="face-front">
+      <div class="review-stat">${cardStat(hz)}</div>
+      ${front}
       <button class="tap-flip" id="flip">Flip card</button>
     </div>
     <div class="face" id="face-back" style="display:none"></div>`;
@@ -2925,7 +2926,11 @@ function readingBack(hz,py,en){
   bindAudio(card);
   $("#fb-btn").onclick=()=>flipCard(false);
   const eb=$("#ex-btn");
-  if(eb)eb.onclick=()=>{$("#ex").style.display="block";eb.style.display="none";};
+  if(eb)eb.onclick=()=>{
+    const shown=$("#ex").style.display==="block";
+    $("#ex").style.display=shown?"none":"block";
+    eb.textContent=shown?"例 Show example":"例 Hide example";
+  };
   const exh=card.querySelector(".ex-hanzi");
   if(exh&&ex)exh.onclick=()=>speak(ex[0]);
   $("#ans-n").onclick=()=>answer("n");
@@ -2967,7 +2972,11 @@ function writingBack(hz,py,en){
   bindAudio(card);
   $("#fb-btn").onclick=()=>flipCard(false);
   const eb=$("#ex-btn");
-  if(eb)eb.onclick=()=>{$("#ex").style.display="block";eb.style.display="none";};
+  if(eb)eb.onclick=()=>{
+    const shown=$("#ex").style.display==="block";
+    $("#ex").style.display=shown?"none":"block";
+    eb.textContent=shown?"例 Show example":"例 Hide example";
+  };
   const exh=card.querySelector(".ex-hanzi");
   if(exh&&ex)exh.onclick=()=>speak(ex[0]);
   document.querySelectorAll("#squares canvas").forEach(cv=>setupCanvas(cv,size));
