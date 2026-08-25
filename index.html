@@ -105,6 +105,7 @@ body{
   box-shadow:0 1px 3px rgba(60,50,30,.06)}
 .card .corner{position:absolute;top:12px;right:12px;width:30px;height:30px;background:var(--cinnabar);color:#fff;
   font-family:var(--hanzi-font);font-size:17px;display:flex;align-items:center;justify-content:center;border-radius:4px;transform:rotate(-3deg);opacity:.92}
+.card .review-stat{position:absolute;top:16px;left:14px;font-size:10.5px;color:var(--sand);letter-spacing:.01em}
 .card.swap{animation:swap .28s ease}
 @keyframes swap{0%{transform:rotateY(88deg);opacity:0}100%{transform:none;opacity:1}}
 
@@ -2847,6 +2848,17 @@ function updateHead(){
   $("#session-info").textContent=`HSK ${level} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}`;
 }
 
+function cardStat(hz){
+  const reviews=rcount(level,mode)[hz]||0;
+  if(!reviews)return "New";
+  const t=rlast(level,mode)[hz];
+  let ago="";
+  if(t){
+    const days=Math.floor((Date.now()-t)/864e5);
+    ago=days<=0?"today":days===1?"1d ago":`${days}d ago`;
+  }
+  return `${reviews} review${reviews>1?"s":""}${ago?" · "+ago:""}`;
+}
 function renderCard(){
   updateHead();
   revealMode=null;drawLocked=false;eraseMode=false;answeredThisCard=false;canvases=[]; /* buttons for this card don't exist yet, so no sync needed here */
@@ -2861,6 +2873,7 @@ function renderCard(){
       <div class="hint">Say it out loud, then flip to write the character.</div>`;
   card.innerHTML=`
     <div class="corner">${ZI[level]}</div>
+    <div class="review-stat">${cardStat(hz)}</div>
     <div class="face" id="face-front">${front}
       <button class="tap-flip" id="flip">Flip card</button>
     </div>
