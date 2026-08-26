@@ -89,7 +89,7 @@ body{
 .mode-btns button .zi{font-family:var(--hanzi-font);color:var(--cinnabar);margin-right:6px;font-size:16px}
 .mode-btns button:active{transform:scale(.97)}
 .review-btn{margin-top:8px;width:100%;padding:9px 0;border-radius:9px;border:1px dashed var(--cinnabar-soft);background:transparent;color:var(--cinnabar);font-size:13px;font-weight:600;cursor:pointer}
-.review-btn{margin-top:8px;width:100%;padding:9px 0;border-radius:9px;border:1px dashed var(--cinnabar-soft);background:transparent;color:var(--cinnabar);font-size:13px;font-weight:600;cursor:pointer}
+.review-done{margin-top:8px;width:100%;padding:9px 0;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--jade);font-size:13px;font-weight:600;text-align:center}
 .reset{display:block;margin:26px auto 0;background:none;border:none;color:var(--sand);font-size:12px;text-decoration:underline;cursor:pointer}
 .notice{font-size:11px;color:var(--sand);text-align:center;margin-top:16px}
 
@@ -2636,7 +2636,10 @@ function reviewList(lv,md,words){
   const solid=words.filter(v=>R[v[0]]==="s").map(v=>v[0]);
   store.daily=store.daily||{};
   const key=lv+"-"+md,today=todayStr(),cached=store.daily[key];
-  if(cached&&cached.d===today)return cached.w.filter(hz=>R[hz]==="s");
+  if(cached&&cached.d===today){
+    const done=cached.done||[];
+    return cached.w.filter(hz=>R[hz]==="s"&&!done.includes(hz));
+  }
   if(!solid.length){delete store.daily[key];return [];}
   const RC=rcount(lv,md),RL=rlast(lv,md),now=Date.now(),n=solid.length;
   const sorted=solid.map(hz=>RC[hz]||0).sort((a,b)=>a-b);
@@ -2654,9 +2657,27 @@ function reviewList(lv,md,words){
   const pick=solid.map(hz=>({hz,k:Math.pow(Math.random(),1/(freqW(hz)*staleW(hz)))}))
                   .sort((a,b)=>b.k-a.k)
                   .slice(0,25).map(o=>o.hz);
-  store.daily[key]={d:today,w:pick};
+  store.daily[key]={d:today,w:pick,done:[]};
   saveStore();
   return pick;
+}
+/* Marks a word as handled in today's review-for-the-day session, so it drops
+   out of the remaining list even if you re-confirm it as Solid. */
+function markReviewed(lv,md,hz){
+  const key=lv+"-"+md,rec=store.daily&&store.daily[key];
+  if(rec&&rec.d===todayStr()&&rec.w.includes(hz)){
+    rec.done=rec.done||[];
+    if(!rec.done.includes(hz)){rec.done.push(hz);saveStore();}
+  }
+}
+/* Today's review progress for the home screen: builds/refreshes the daily
+   list as a side effect, then reports how many of today's picks are left
+   vs. how many there were in total (so a fully-cleared day can say so). */
+function reviewStatus(lv,md,words){
+  const remaining=reviewList(lv,md,words);
+  const rec=store.daily&&store.daily[lv+"-"+md];
+  const total=(rec&&rec.d===todayStr())?rec.w.length:remaining.length;
+  return{remaining:remaining.length,total};
 }
 
 /* Persistence: prefers the Claude storage API; falls back to browser localStorage
@@ -2756,7 +2777,8 @@ function renderHome(){
     });
     const seenDistinct=solid+tent+ratedN;   /* distinct words rated in this mode — cannot over-count */
     /* daily "words for review" sample drawn from the solid pile */
-    const review=reviewList(lv,homeMode,words).length;
+    const revStatus=reviewStatus(lv,homeMode,words);
+    const review=revStatus.remaining;
     const notl=words.length-solid-tent;
     const pctSolid=Math.round(100*solid/words.length);   /* share of the level's words currently rated Solid */
     const avg=(tot,n)=>n?`<i>rev/word: ${(tot/n).toFixed(1)}</i>`:"";
@@ -2785,7 +2807,8 @@ function renderHome(){
         <button class="chip t" data-lv="${lv}" data-f="t" ${tent?"":"disabled"}><b>${tent}</b>Tentative${avg(revT,tent)}</button>
         <button class="chip n" data-lv="${lv}" data-f="n" ${notl?"":"disabled"}><b>${notl}</b>Not learned${avg(revN,ratedN)}</button>
       </div>
-      ${review?`<button class="review-btn" data-lv="${lv}">↻ ${review} word${review>1?"s":""} for review</button>`:""}
+      ${review?`<button class="review-btn" data-lv="${lv}">↻ ${review} word${review>1?"s":""} for review</button>`
+        :revStatus.total?`<div class="review-done">✓ Review complete</div>`:""}
     `;
     wrap.appendChild(el);
   });
@@ -3252,6 +3275,7 @@ function answer(r){
   st.seen++;if(r==="s")st.correct++;
   rmap(level,mode)[hz]=r;
   rlast(level,mode)[hz]=Date.now();
+  if(reviewing==="x")markReviewed(level,mode,hz);
   sess[r]++;
   saveStore();
   idx++;
