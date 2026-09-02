@@ -3264,7 +3264,7 @@ function analyzeDownStroke(pts){
    hook (an L ending flat) keeps a gentle descent into a steady heng-like
    horizontal width — no bulge, since it doesn't end in a point. */
 function hookedWidth(t,b,cornerT,hookT){
-  const peak=1.25,downFloor=0.75,hengW=0.85,bulge=2.0,tip=0.06,widenFrac=0.78,widenFracH=0.42;
+  const peak=1.25,downFloor=0.42,hengW=0.85,bulge=2.0,tip=0.06,widenFrac=0.78,widenFracH=0.42;
   if(hookT!=null){
     if(t>=hookT){ /* past the corner: taper sharply to a point */
       const k=(t-hookT)/Math.max(0.001,1-hookT);
@@ -3304,8 +3304,8 @@ function brushWidth(type,t,b){
     case"heng": /* press, lift through the middle, press again */
       return b*(1.05-0.42*Math.sin(Math.PI*t)+0.10*t);
     case"shu":
-    case"pie": /* heavy start → gentle taper (plain, no hook detected) */
-      return b*(1.25-(1.25-0.75)*Math.pow(t,0.85));
+    case"pie": /* heavy start → taper (plain, no hook detected) */
+      return b*(1.25-(1.25-0.42)*Math.pow(t,0.85));
     case"ti":
       return Math.max(b*0.05,b*1.15*Math.pow(1-t,0.9));
     case"na": /* tip → heavy press → swept foot */
