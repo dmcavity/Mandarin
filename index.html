@@ -3218,9 +3218,9 @@ function classifyStroke(pts,box){
    Returns null for plain strokes, else {cornerT,hookT} as fractions (either
    may be null). Works on local geometry, so an L-shape still gets corner
    treatment even when its NET direction classifies it as something else. */
-function analyzeDownStroke(pts){
+function analyzeDownStroke(pts,box){
   const n=pts.length;
-  if(n<8)return null;
+  if(n<10)return null;
   const dirs=[];
   for(let i=0;i<n-1;i++){
     const dx=pts[i+1].x-pts[i].x,dy=pts[i+1].y-pts[i].y;
@@ -3228,27 +3228,47 @@ function analyzeDownStroke(pts){
     dirs.push({dx:dx/m,dy:dy/m});
   }
   const S=dirs.length;
-  const lab=dirs.map(d=>d.dy<-0.35?"u":(Math.abs(d.dx)>0.85?"h":(d.dy>0.5?"d":"m")));
-  /* must LEAD downward: most of the first quarter moving down */
-  const lead=Math.max(3,Math.floor(S*0.25));
-  if(lab.slice(0,lead).filter(l=>l==="d").length<lead*0.6)return null;
-  /* terminal hook: contiguous upward run ending at the tail */
+  /* the stroke's leading direction, averaged over its first third */
+  const leadEnd=Math.max(2,Math.floor(S*0.33));
+  let lx=0,ly=0;
+  for(let i=0;i<leadEnd;i++){lx+=dirs[i].dx;ly+=dirs[i].dy;}
+  const lm=Math.hypot(lx,ly)||1;lx/=lm;ly/=lm;
+  if(ly<0.45)return null;                       /* must genuinely lead downward */
+  const angTo=(dx,dy)=>{
+    const m=Math.hypot(dx,dy)||1;
+    return Math.acos(Math.max(-1,Math.min(1,lx*dx/m+ly*dy/m)))*180/Math.PI;
+  };
+  /* terminal hook: a sustained run at the tail that genuinely reverses upward.
+     Requires real length, real rise, and a large angle change from the lead
+     direction — so a smooth diagonal or a little wobble never qualifies. */
   let hookStart=null;
   {
     let i=S-1,run=0;
-    while(i>=0&&lab[i]==="u"){run++;i--;}
-    if(run>=Math.max(2,Math.floor(S*0.06))&&run<=S*0.45)hookStart=i+1;
+    while(i>=0&&dirs[i].dy<-0.30){run++;i--;}
+    if(run>=Math.max(3,Math.floor(S*0.08))&&run<=S*0.45){
+      const hs=i+1;
+      const dx=pts[n-1].x-pts[hs].x,dy=pts[n-1].y-pts[hs].y;
+      const len=Math.hypot(dx,dy);
+      const rise=pts[hs].y-pts[n-1].y;
+      if(len>box*0.05&&rise>box*0.03&&angTo(dx,dy)>60)hookStart=hs;
+    }
   }
-  /* corner to horizontal: first sustained horizontal run after the down part */
+  /* corner: the stroke genuinely flattens to near-horizontal and holds it,
+     turning at a wide angle from the lead direction and covering real
+     horizontal distance. A steady diagonal fails all three tests. */
   let cornerStart=null;
   {
     const limit=hookStart==null?S:hookStart;
-    let i=0;
-    while(i<limit&&lab[i]!=="h")i++;
-    if(i<limit&&i>=Math.max(2,Math.floor(S*0.15))){
-      let j=i,hRun=0;
-      while(j<limit&&(lab[j]==="h"||lab[j]==="m")){if(lab[j]==="h")hRun++;j++;}
-      if(hRun>=Math.max(4,Math.floor(S*0.15)))cornerStart=i;
+    for(let i=Math.max(2,Math.floor(S*0.15));i<limit;i++){
+      if(Math.abs(dirs[i].dy)<0.32&&angTo(dirs[i].dx,dirs[i].dy)>50){
+        let j=i,cnt=0;
+        while(j<limit&&Math.abs(dirs[j].dy)<0.45){cnt++;j++;}
+        if(cnt>=Math.max(4,Math.floor(S*0.18))){
+          const endIdx=Math.min(n-1,j);
+          if(Math.abs(pts[endIdx].x-pts[i].x)>box*0.12)cornerStart=i;
+        }
+        break;
+      }
     }
   }
   if(hookStart==null&&cornerStart==null)return null;
@@ -3256,48 +3276,47 @@ function analyzeDownStroke(pts){
          hookT:hookStart==null?null:hookStart/(S-1)};
 }
 /* Width profile for a downward stroke with a corner and/or terminal hook.
-   The segment leading into an upward hook (the downstroke itself, or the
-   horizontal run if there's an earlier corner) looks like an ORDINARY
-   stroke for most of its length, then flares out only in the final
-   stretch approaching the turn, reaching a full 2x-base bulge exactly at
-   the corner before tapering sharply to a point. A plain corner with no
-   hook (an L ending flat) keeps a gentle descent into a steady heng-like
-   horizontal width — no bulge, since it doesn't end in a point. */
+   Every branch is CONTINUOUS with the one before it — the width where a
+   segment starts is always the width the previous segment ended at — so a
+   stroke never jumps thickness at a detected corner. A segment leading into
+   an upward hook flares late to a 2x bulge at the turn, then tapers to a
+   point. A plain corner with no hook eases into a steady heng-like width. */
 function hookedWidth(t,b,cornerT,hookT){
   const peak=1.25,downFloor=0.42,hengW=0.85,bulge=2.0,tip=0.06,widenFrac=0.78,widenFracH=0.42;
-  if(hookT!=null){
-    if(t>=hookT){ /* past the corner: taper sharply to a point */
-      const k=(t-hookT)/Math.max(0.001,1-hookT);
-      return b*Math.max(tip,bulge*Math.pow(1-k,1.6));
-    }
-    if(cornerT!=null&&t>=cornerT){ /* horizontal run: a brush slowing down, gradually leaving
-         more ink well before the hook — starts widening earlier than a straight hook would */
-      const widenStart=cornerT+(hookT-cornerT)*widenFracH;
-      if(t<widenStart)return b*hengW;
-      const k=(t-widenStart)/Math.max(0.001,hookT-widenStart);
-      return b*(hengW+(bulge-hengW)*Math.pow(k,1.05));
-    }
-    if(cornerT!=null){ /* down-stroke before an earlier corner: normal gentle descent, unrescaled */
-      return b*(peak-(peak-downFloor)*Math.pow(Math.min(1,t),0.85));
-    }
-    /* straight down-stroke leading right into the hook: reads as an ordinary
-       stroke until close to the corner, then widens rapidly to the bulge */
+  const descentAt=tt=>peak-(peak-downFloor)*Math.pow(Math.max(0,tt),0.85);
+  /* hook with no earlier corner: ordinary descent, late flare, sharp point */
+  if(hookT!=null&&cornerT==null){
     const widenStart=hookT*widenFrac;
-    const plainAt=tt=>peak-(peak-downFloor)*Math.pow(tt,0.85); /* same curve as an ordinary stroke, unrescaled */
-    if(t<widenStart)return b*plainAt(t);
-    const startW=plainAt(widenStart);
-    const k=(t-widenStart)/Math.max(0.001,hookT-widenStart);
-    return b*(startW+(bulge-startW)*Math.pow(k,1.2));
+    if(t<widenStart)return b*descentAt(t);
+    if(t<hookT){
+      const w0=descentAt(widenStart);
+      const k=(t-widenStart)/Math.max(0.001,hookT-widenStart);
+      return b*(w0+(bulge-w0)*Math.pow(k,1.2));
+    }
+    const k=(t-hookT)/Math.max(0.001,1-hookT);
+    return b*Math.max(tip,bulge*Math.pow(1-k,1.6));
   }
-  /* corner only, no hook (e.g. a plain L ending flat) */
-  if(cornerT!=null&&t>=cornerT){
-    const k=(t-cornerT)/Math.max(0.001,1-cornerT);
-    if(k<0.18)return b*(1.0-(1.0-hengW)*(k/0.18));      /* pressed corner settling */
-    return b*(hengW+0.2*Math.max(0,(k-0.75)/0.25));     /* heng-style finish */
+  if(cornerT!=null){
+    if(t<cornerT)return b*descentAt(t);
+    const w0=descentAt(cornerT);              /* width the descent ended at — no jump */
+    const end=hookT!=null?hookT:1;
+    const k=(t-end<0?(t-cornerT)/Math.max(0.001,end-cornerT):1);
+    const settle=Math.min(1,k/0.18);
+    const wRun=w0+(hengW-w0)*settle;          /* eases from descent width into heng width */
+    if(hookT==null){
+      if(t>=1)return b*(hengW+0.2);
+      return b*(wRun+0.2*Math.max(0,(k-0.75)/0.25));
+    }
+    if(t<end){
+      if(k<widenFracH)return b*wRun;
+      const wStart=w0+(hengW-w0)*Math.min(1,widenFracH/0.18);
+      const kk=(k-widenFracH)/Math.max(0.001,1-widenFracH);
+      return b*(wStart+(bulge-wStart)*Math.pow(kk,1.05));
+    }
+    const kt=(t-end)/Math.max(0.001,1-end);
+    return b*Math.max(tip,bulge*Math.pow(1-kt,1.6));
   }
-  const span=cornerT!=null?cornerT:1;
-  const k=Math.min(1,t/Math.max(0.001,span));
-  return b*(peak-(peak-downFloor)*Math.pow(k,0.85));    /* gentle descent */
+  return b*descentAt(t);
 }
 function brushWidth(type,t,b){
   switch(type){
@@ -3327,7 +3346,7 @@ function drawBrushStroke(ctx,raw,box){
   const n=pts.length;
   if(n<3){const p=raw[0];inkCap(ctx,p,Math.max(2,box*0.03));return;}
   const type=classifyStroke(pts,box);
-  const feat=analyzeDownStroke(pts);
+  const feat=analyzeDownStroke(pts,box);
   const b=Math.max(3,box*0.044);
   const widthAt=t=>feat?hookedWidth(t,b,feat.cornerT,feat.hookT):brushWidth(type,t,b);
   const left=[],right=[];
