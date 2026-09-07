@@ -2737,7 +2737,11 @@ function reviewList(lv,md,words){
     return 0.1+0.9*Math.max(0,Math.min(1,(days-1)/9));
   };
   /* weighted sampling without replacement (Efraimidis–Spirakis) */
-  const cap={1:15,2:15,3:30,4:40}[lv]||25;
+  /* Per-level daily cap, further limited to 30% of the solid pile — so a small
+     solid set isn't cycled through every couple of days. At least 1 word is
+     always offered whenever anything is solid. */
+  const levelCap={1:15,2:15,3:30,4:40}[lv]||25;
+  const cap=Math.max(1,Math.min(levelCap,Math.floor(solid.length*0.3)));
   const pick=solid.map(hz=>({hz,k:Math.pow(Math.random(),1/(freqW(hz)*staleW(hz)))}))
                   .sort((a,b)=>b.k-a.k)
                   .slice(0,cap).map(o=>o.hz);
