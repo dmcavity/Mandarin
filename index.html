@@ -82,6 +82,37 @@ body{
 .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(60,50,30,.15)}
 .seg button.on .zi{color:var(--cinnabar)}
 #back-btn,#next-btn{font-size:30px;line-height:.8;padding-bottom:4px}
+/* ---- home: today card, sections, collapsed deck rows ---- */
+.today{margin-top:14px;border:1px solid var(--cinnabar-soft);border-radius:14px;background:var(--card);padding:14px 15px}
+.today .lab{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--cinnabar);font-weight:700}
+.today .big{display:flex;align-items:baseline;gap:9px;margin-top:6px}
+.today .big b{font-size:30px;line-height:1;color:var(--ink)}
+.today .big span{font-size:13px;color:var(--sand)}
+.today .from{font-size:11.5px;color:var(--sand);margin-top:7px;line-height:1.5}
+.today .go{margin-top:11px;width:100%;padding:11px 0;border-radius:10px;border:none;background:var(--cinnabar);
+  color:#fff;font-size:14px;font-weight:700;font-family:var(--ui-font);cursor:pointer}
+.today.done{border-color:var(--line)}
+.today.done .lab{color:var(--jade)}
+.sec{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--sand);font-weight:700;margin:22px 3px 8px}
+.rowdeck{display:flex;align-items:center;gap:11px;width:100%;padding:11px 12px;border:1px solid var(--line);
+  border-radius:12px;background:var(--card);margin-bottom:8px;font-family:var(--ui-font);text-align:left;cursor:pointer}
+.rowdeck .chop{width:34px;height:34px;flex:0 0 34px;background:var(--cinnabar);color:#fff;font-family:var(--hanzi-font);
+  font-size:19px;display:flex;align-items:center;justify-content:center;border-radius:5px;transform:rotate(-2deg)}
+.rowdeck .mid{flex:1;min-width:0}
+.rowdeck .nm{font-size:14.5px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rowdeck .sub{font-size:11.5px;color:var(--sand);margin-top:2px}
+.rowdeck .minibar{height:3px;background:#EFE9DC;border-radius:2px;margin-top:6px;overflow:hidden}
+.rowdeck .minibar i{display:block;height:100%;background:var(--jade);border-radius:2px;transition:width .3s}
+.rowdeck .rt{flex:0 0 auto;display:flex;align-items:center;gap:8px}
+.rowdeck.fresh{opacity:.72}
+.due-badge{background:#F7EDD8;border:1px solid #E4CFA1;color:#8F6A1C;border-radius:8px;padding:4px 8px;
+  font-size:11.5px;font-weight:700;white-space:nowrap;cursor:pointer;font-family:var(--ui-font)}
+.chev{color:var(--sand);font-size:17px;line-height:1}
+.showall{display:block;margin:2px auto 0;background:none;border:none;color:var(--sand);font-size:12px;
+  text-decoration:underline;cursor:pointer;padding:6px;font-family:var(--ui-font)}
+.level .lvl-head{display:flex;align-items:center;gap:11px;cursor:pointer;margin:-2px 0 2px}
+.level .lvl-head .chop{width:34px;height:34px;flex:0 0 34px;font-size:19px;border-radius:5px;transform:rotate(-2deg)}
+.level .lvl-head .mid{flex:1;min-width:0}
 .level{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:14px}
 .level-top{display:flex;align-items:center;gap:12px}
 .level .chop{width:44px;height:44px;flex:0 0 44px;background:var(--cinnabar);color:#fff;font-family:var(--hanzi-font);font-size:26px;display:flex;align-items:center;justify-content:center;border-radius:5px;transform:rotate(-2deg)}
@@ -2780,7 +2811,9 @@ const DEFAULTS={
   gradDays:[1,3],               // scheduled reviews after a word first becomes Solid
   autoSpeak:false,              // speak the word automatically when a reading card is flipped
   showStats:true,               // the "3 reviews · 5d ago" badge on the card front
-  maxCards:0                    // 0 = no limit on cards per session
+  maxCards:0,                   // 0 = no limit on cards per session
+  open:[],                      // decks currently expanded on the home screen
+  showAll:false                 // reveal levels not yet started
 };
 let SET=JSON.parse(JSON.stringify(DEFAULTS));
 function syncSettings(){SET.shuffle=shuffleOn;SET.mode=homeMode;SET.voice=voicePref;}
@@ -2800,6 +2833,8 @@ function applySettings(o){
   SET.autoSpeak=typeof o.autoSpeak==="boolean"?o.autoSpeak:d.autoSpeak;
   SET.showStats=typeof o.showStats==="boolean"?o.showStats:d.showStats;
   SET.maxCards=(typeof o.maxCards==="number"&&o.maxCards>=0&&o.maxCards<=1000)?Math.round(o.maxCards):d.maxCards;
+  SET.open=Array.isArray(o.open)?o.open.filter(x=>typeof x==="number"||typeof x==="string"):[];
+  SET.showAll=typeof o.showAll==="boolean"?o.showAll:d.showAll;
   if(typeof o.shuffle==="boolean"){SET.shuffle=o.shuffle;shuffleOn=o.shuffle;}
   if(o.mode==="reading"||o.mode==="writing"){SET.mode=o.mode;homeMode=o.mode;}
   if(typeof o.voice==="string"){SET.voice=o.voice;voicePref=o.voice;}
@@ -3106,59 +3141,164 @@ function show(id){document.querySelectorAll(".screen").forEach(e=>e.classList.re
 
 /* ============ HOME ============ */
 const ZI={1:"一",2:"二",3:"三",4:"四"};
+/* ---- deck helpers: one place that knows how a deck's numbers are computed ---- */
+function deckWords(lv){return V.filter(v=>v[3]===lv);}
+function deckStarted(lv){
+  const R=store.ratings&&store.ratings[lv];
+  return !!R&&["reading","writing"].some(md=>Object.keys(R[md]||{}).length>0);
+}
+function deckSummary(lv){
+  const words=deckWords(lv);
+  const ms=stat(lv,homeMode),R=rmap(lv,homeMode),RC=rcount(lv,homeMode);
+  let solid=0,tent=0,ratedN=0,revS=0,revT=0,revN=0;
+  words.forEach(v=>{
+    const g=R[v[0]],c=RC[v[0]]||0;
+    if(g==="s"){solid++;revS+=c;}
+    else if(g==="t"){tent++;revT+=c;}
+    else if(g==="n"){ratedN++;revN+=c;}
+  });
+  const rs=reviewStatus(lv,homeMode,words);
+  return{lv,name:"HSK "+lv,chop:ZI[lv],words,ms,solid,tent,ratedN,revS,revT,revN,
+         seen:solid+tent+ratedN,notl:words.length-solid-tent,
+         pct:Math.round(100*solid/words.length),review:rs.remaining,revTotal:rs.total};
+}
+/* Everything due across every deck, so a day's work is one button rather than
+   a hunt through the list. */
+function todayParts(){
+  const out=[];
+  ALL_LEVELS.forEach(lv=>{
+    const rem=reviewList(lv,homeMode,deckWords(lv));
+    if(rem.length)out.push({lv,label:"HSK "+lv,words:rem});
+  });
+  return out;
+}
+function startTodayReview(){
+  const parts=todayParts();
+  const byHz={};V.forEach(v=>byHz[v[0]]=v);
+  let cards=[];parts.forEach(p=>p.words.forEach(hz=>{if(byHz[hz])cards.push(byHz[hz]);}));
+  if(!cards.length)return;
+  navStack=[];
+  level=0;mode=homeMode;reviewing="x";
+  if(shuffleOn)cards=[...cards].sort(()=>Math.random()-0.5);
+  deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];
+  show("scr-card");renderCard();renderReturnBar();
+}
+function toggleDeck(id){
+  const open=new Set(SET.open||[]);
+  if(open.has(id))open.delete(id);else open.add(id);
+  SET.open=[...open];saveSettings();renderHome();
+}
+
+const ALL_LEVELS=[1,2,3,4];
 function renderHome(){
   $("#shuffle-toggle").classList.toggle("on",shuffleOn);
   document.querySelectorAll("#mode-seg button").forEach(b=>b.classList.toggle("on",b.dataset.md===homeMode));
   const wrap=$("#levels");wrap.innerHTML="";
-  const st=stat; /* keep name */
-  [1,2,3,4].forEach(lv=>{
-    const words=V.filter(v=>v[3]===lv);
-    const ms=stat(lv,homeMode);
-    const R=rmap(lv,homeMode);
-    const RC=rcount(lv,homeMode);
-    let solid=0,tent=0,ratedN=0,revS=0,revT=0,revN=0;
-    words.forEach(v=>{
-      const g=R[v[0]],c=RC[v[0]]||0;
-      if(g==="s"){solid++;revS+=c;}
-      else if(g==="t"){tent++;revT+=c;}
-      else if(g==="n"){ratedN++;revN+=c;}
-    });
-    const seenDistinct=solid+tent+ratedN;   /* distinct words rated in this mode — cannot over-count */
-    /* daily "words for review" sample drawn from the solid pile */
-    const revStatus=reviewStatus(lv,homeMode,words);
-    const review=revStatus.remaining;
-    const notl=words.length-solid-tent;
-    const pctSolid=Math.round(100*solid/words.length);   /* share of the level's words currently rated Solid */
-    const avg=(tot,n)=>n?`<i>rev/word: ${(tot/n).toFixed(1)}</i>`:"";
-    const zi=homeMode==="reading"?"认":"写";
-    const verb=homeMode==="reading"?"Read":"Write";
+  const open=new Set(SET.open||[]);
+  const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+  /* ---- today ---- */
+  const parts=todayParts();
+  const dueTotal=parts.reduce((n,p)=>n+p.words.length,0);
+  const anyScheduled=ALL_LEVELS.some(lv=>reviewStatus(lv,homeMode,deckWords(lv)).total>0);
+  if(dueTotal){
+    const t=document.createElement("div");
+    t.className="today";
+    t.innerHTML=`<div class="lab">Today</div>
+      <div class="big"><b>${dueTotal}</b><span>word${dueTotal===1?"":"s"} for review</span></div>
+      <div class="from">${parts.map(p=>`${esc(p.label)} · ${p.words.length}`).join(" &nbsp;·&nbsp; ")}</div>
+      <button class="go" id="today-go">Start today’s review</button>`;
+    wrap.appendChild(t);
+  }else if(anyScheduled){
+    const t=document.createElement("div");
+    t.className="today done";
+    t.innerHTML=`<div class="lab">Today</div>
+      <div class="big"><b>✓</b><span>review complete</span></div>
+      <div class="from">A fresh set is drawn each day.</div>`;
+    wrap.appendChild(t);
+  }
+
+  /* ---- which levels to show ---- */
+  let levels=ALL_LEVELS.slice();
+  let hidden=0;
+  if(!SET.showAll){
+    const started=levels.filter(deckStarted);
+    const upto=Math.max(2,(started.length?Math.max(...started):0)+1);
+    const vis=levels.filter(lv=>lv<=upto);
+    hidden=levels.length-vis.length;
+    levels=vis;
+  }
+
+  const sec=document.createElement("div");
+  sec.className="sec";sec.textContent="HSK levels";
+  wrap.appendChild(sec);
+
+  const zi=homeMode==="reading"?"认":"写";
+  const verb=homeMode==="reading"?"Read":"Write";
+  const avg=(tot,n)=>n?`<i>rev/word: ${(tot/n).toFixed(1)}</i>`:"";
+
+  levels.forEach(lv=>{
+    const D=deckSummary(lv);
+    const id=String(lv);
+    if(!open.has(id)){
+      const row=document.createElement("button");
+      row.className="rowdeck"+(D.seen?"":" fresh");
+      row.dataset.open=id;
+      row.innerHTML=`<div class="chop">${D.chop}</div>
+        <div class="mid">
+          <div class="nm">${esc(D.name)}</div>
+          <div class="sub">${D.words.length} words · ${D.pct}% solid</div>
+          <div class="minibar"><i style="width:${D.pct}%"></i></div>
+        </div>
+        <div class="rt">${D.review?`<span class="due-badge" data-rev="${lv}">↻ ${D.review} due</span>`:""}<span class="chev">›</span></div>`;
+      wrap.appendChild(row);
+      return;
+    }
     const el=document.createElement("div");
     el.className="level";
     el.innerHTML=`
-      <div class="level-top">
-        <div class="chop">${ZI[lv]}</div>
-        <div>
-          <h2>HSK ${lv}</h2>
-          <div class="count">${words.length} words</div>
+      <div class="lvl-head" data-open="${id}">
+        <div class="chop">${D.chop}</div>
+        <div class="mid">
+          <h2>${esc(D.name)}</h2>
+          <div class="count">${D.words.length} words</div>
         </div>
+        <span class="chev">⌄</span>
       </div>
-      <div class="bar"><i style="width:${pctSolid}%"></i></div>
+      <div class="bar"><i style="width:${D.pct}%"></i></div>
       <div class="statline">
-        <span><b>${seenDistinct}</b>/${words.length} words seen · <b>${pctSolid}%</b> of words solid</span>
-        <span>${ms.seen} review${ms.seen===1?"":"s"} in total</span>
+        <span><b>${D.seen}</b>/${D.words.length} words seen · <b>${D.pct}%</b> of words solid</span>
+        <span>${D.ms.seen} review${D.ms.seen===1?"":"s"} in total</span>
       </div>
       <div class="mode-btns">
-        <button class="all-btn" data-lv="${lv}"><span class="zi">${zi}</span>${verb} all ${words.length}</button>
+        <button class="all-btn" data-lv="${lv}"><span class="zi">${zi}</span>${verb} all ${D.words.length}</button>
       </div>
       <div class="chips">
-        <button class="chip s" data-lv="${lv}" data-f="s" ${solid?"":"disabled"}><b>${solid}</b>Solid${avg(revS,solid)}</button>
-        <button class="chip t" data-lv="${lv}" data-f="t" ${tent?"":"disabled"}><b>${tent}</b>Tentative${avg(revT,tent)}</button>
-        <button class="chip n" data-lv="${lv}" data-f="n" ${notl?"":"disabled"}><b>${notl}</b>Not learned${avg(revN,ratedN)}</button>
+        <button class="chip s" data-lv="${lv}" data-f="s" ${D.solid?"":"disabled"}><b>${D.solid}</b>Solid${avg(D.revS,D.solid)}</button>
+        <button class="chip t" data-lv="${lv}" data-f="t" ${D.tent?"":"disabled"}><b>${D.tent}</b>Tentative${avg(D.revT,D.tent)}</button>
+        <button class="chip n" data-lv="${lv}" data-f="n" ${D.notl?"":"disabled"}><b>${D.notl}</b>Not learned${avg(D.revN,D.ratedN)}</button>
       </div>
-      ${review?`<button class="review-btn" data-lv="${lv}">↻ ${review} word${review>1?"s":""} for review</button>`
-        :revStatus.total?`<div class="review-done">✓ Review complete</div>`:""}
-    `;
+      ${D.review?`<button class="review-btn" data-lv="${lv}">↻ ${D.review} word${D.review>1?"s":""} for review</button>`
+        :D.revTotal?`<div class="review-done">✓ Review complete</div>`:""}`;
     wrap.appendChild(el);
+  });
+
+  if(hidden||SET.showAll){
+    const b=document.createElement("button");
+    b.className="showall";
+    b.textContent=SET.showAll?"Show fewer levels":`Show all levels (${hidden} more)`;
+    b.onclick=()=>{SET.showAll=!SET.showAll;saveSettings();renderHome();};
+    wrap.appendChild(b);
+  }
+
+  const go=$("#today-go");
+  if(go)go.onclick=startTodayReview;
+  wrap.querySelectorAll("[data-open]").forEach(el=>el.onclick=e=>{
+    if(e.target.closest("[data-rev]"))return;
+    toggleDeck(el.dataset.open);
+  });
+  wrap.querySelectorAll("[data-rev]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();startSession(+b.dataset.rev,homeMode,"x");
   });
   wrap.querySelectorAll(".all-btn").forEach(b=>b.onclick=()=>startSession(+b.dataset.lv,homeMode,null));
   wrap.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
@@ -3581,8 +3721,8 @@ function endSession(){
   }
   const total=sess.s+sess.t+sess.n;
   $("#done-summary").textContent=total
-    ?`${total} of ${deck.length} cards rated — ✓ ${sess.s} solid · 〜 ${sess.t} tentative · ✗ ${sess.n} not learned. (HSK ${level}, ${mode} mode)`
-    :`Browsed ${deck.length} card${deck.length===1?"":"s"} without rating. (HSK ${level}, ${mode} mode)`;
+    ?`${total} of ${deck.length} cards rated — ✓ ${sess.s} solid · 〜 ${sess.t} tentative · ✗ ${sess.n} not learned. (${level?"HSK "+level:"all decks"}, ${mode} mode)`
+    :`Browsed ${deck.length} card${deck.length===1?"":"s"} without rating. (${level?"HSK "+level:"all decks"}, ${mode} mode)`;
   show("scr-done");
 }
 
@@ -3590,13 +3730,18 @@ function updateHead(){
   $("#back-btn").style.visibility=idx>0?"visible":"hidden";
   $("#prog-bar").style.width=Math.round(100*idx/deck.length)+"%";
   const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Review",q:"Search"}[reviewing]||"";
-  $("#session-info").textContent=`HSK ${level} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}`;
+  const who=level?`HSK ${level}`:"All decks";
+  $("#session-info").textContent=`${who} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}`;
 }
 
+/* A combined review draws from several decks at once, so the level a card
+   files its progress under comes from the card itself, not the session. */
+function cardLevel(){return (deck[idx]&&deck[idx][3])||level;}
 function cardStat(hz){
-  const reviews=rcount(level,mode)[hz]||0;
+  const lv=cardLevel();
+  const reviews=rcount(lv,mode)[hz]||0;
   if(!reviews)return "New";
-  const t=rlast(level,mode)[hz];
+  const t=rlast(lv,mode)[hz];
   let ago="";
   if(t){
     const days=Math.floor((Date.now()-t)/864e5);
@@ -3617,7 +3762,7 @@ function renderCard(){
       <div class="english">${en}</div>
       <div class="hint">Say it out loud, then flip to write the character.</div>`;
   card.innerHTML=`
-    <div class="corner">${ZI[level]}</div>
+    <div class="corner">${ZI[cardLevel()]||"卡"}</div>
     <div class="face" id="face-front">
       ${SET.showStats?`<div class="review-stat">${cardStat(hz)}</div>`:""}
       ${front}
@@ -4137,26 +4282,27 @@ function answer(r){
   if(answeredThisCard)return;
   answeredThisCard=true;
   const hz=deck[idx][0];
-  const st=stat(level,mode);
+  const lvl=cardLevel();
+  const st=stat(lvl,mode);
   const prev=given[idx];
   if(prev){ /* card was answered before (user came back) — replace the old judgment */
     sess[prev]--;st.seen--;if(prev==="s")st.correct--;
   }
   if(!prev){ /* count one review per card per pass (a back-button revision is the same review) */
-    const rc=rcount(level,mode);rc[hz]=(rc[hz]||0)+1;
+    const rc=rcount(lvl,mode);rc[hz]=(rc[hz]||0)+1;
   }
   given[idx]=r;
   st.seen++;if(r==="s")st.correct++;
-  const R=rmap(level,mode),wasSolid=R[hz]==="s",G=grad(level,mode),now=Date.now();
+  const R=rmap(lvl,mode),wasSolid=R[hz]==="s",G=grad(lvl,mode),now=Date.now();
   R[hz]=r;
-  rlast(level,mode)[hz]=now;
+  rlast(lvl,mode)[hz]=now;
   if(r==="s"){
     if(!wasSolid)G[hz]={t:now,s:0};                      /* just learned — schedule +1d and +3d */
     else if(gradDue(G[hz],now))G[hz].s++;                /* a scheduled review just happened */
     if(G[hz]&&!gradPending(G[hz]))delete G[hz];          /* graduated: back to normal weighting */
   }
   else delete G[hz];                                     /* dropped out of Solid — schedule resets */
-  if(reviewing==="x")markReviewed(level,mode,hz);
+  if(reviewing==="x")markReviewed(lvl,mode,hz);
   sess[r]++;
   saveStore();
   idx++;
