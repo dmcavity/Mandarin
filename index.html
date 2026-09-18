@@ -82,6 +82,31 @@ body{
 .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(60,50,30,.15)}
 .seg button.on .zi{color:var(--cinnabar)}
 #back-btn,#next-btn{font-size:30px;line-height:.8;padding-bottom:4px}
+/* ---- lists ---- */
+.list-edit{margin-top:8px;width:100%;padding:8px 0;border-radius:9px;border:1px solid var(--line);
+  background:transparent;color:var(--sand);font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--ui-font)}
+.add-tools{display:flex;gap:8px;margin-top:10px}
+.add-tools button{flex:1;padding:9px 0;border-radius:9px;border:1px solid var(--line);background:var(--card);
+  color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--ui-font)}
+.add-tools #add-done{background:var(--cinnabar);border-color:var(--cinnabar);color:#fff}
+.wrow{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:1px solid var(--line);
+  border-radius:11px;background:var(--card);margin-bottom:7px;font-family:var(--ui-font);text-align:left}
+.wrow .wh{font-family:var(--hanzi-font);font-size:21px;color:var(--ink);flex:0 0 auto}
+.wrow .wm{flex:1;min-width:0}
+.wrow .wp{font-size:11.5px;color:var(--sand)}
+.wrow .we{font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wrow .wsrc{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--sand);margin-top:2px}
+.wrow .wbtn{flex:0 0 auto;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;
+  padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--ui-font)}
+.wrow .wbtn.added{background:var(--jade);border-color:var(--jade);color:#fff}
+.wrow .wbtn.need{background:#F7EDD8;border-color:#E4CFA1;color:#8F6A1C}
+.wrow .wbtn.rm{color:var(--cinnabar);border-color:var(--cinnabar-soft)}
+.wrow.dim{opacity:.6}
+.list-name{width:100%;padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--card);
+  color:var(--ink);font-size:15px;font-weight:700;font-family:var(--ui-font);margin-bottom:10px}
+.modal-area{width:100%;min-height:150px;padding:10px 11px;border-radius:9px;border:1px solid var(--line);
+  background:var(--paper);color:var(--ink);font-size:13px;font-family:var(--ui-font);margin-bottom:14px;resize:vertical}
+.form-lab{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--sand);font-weight:700;margin:2px 0 4px}
 /* ---- home: today card, sections, collapsed deck rows ---- */
 .today{margin-top:14px;border:1px solid var(--cinnabar-soft);border-radius:14px;background:var(--card);padding:14px 15px}
 .today .lab{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--cinnabar);font-weight:700}
@@ -306,6 +331,32 @@ body{
   <div id="levels"></div>
   <input type="file" id="restore-file" accept="application/json,.json" style="display:none">
   <p class="notice">Tip: tap any pinyin to hear the pronunciation.</p>
+</div>
+
+<!-- ================= LIST EDITOR ================= -->
+<div class="screen" id="scr-list">
+  <div class="set-head">
+    <button id="list-back" aria-label="Back to home">‹</button>
+    <h2 id="list-title">List</h2>
+  </div>
+  <div id="list-body"></div>
+</div>
+
+<!-- ================= ADD WORDS ================= -->
+<div class="screen" id="scr-add">
+  <div class="set-head">
+    <button id="add-back" aria-label="Back to the list">‹</button>
+    <h2 id="add-title">Add words</h2>
+  </div>
+  <div class="search-box" style="margin-top:6px">
+    <input type="text" id="add-input" placeholder="🔍 Type hanzi, pinyin or English…" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </div>
+  <div class="add-tools">
+    <button id="paste-btn">📋 Paste a list</button>
+    <button id="add-done">Done</button>
+  </div>
+  <div id="add-note" class="set-note"></div>
+  <div id="add-results"></div>
 </div>
 
 <!-- ================= SETTINGS ================= -->
@@ -2794,7 +2845,7 @@ const EX={
 const $=s=>document.querySelector(s);
 let store={stats:{},ratings:{}};        // stats[level][mode]={seen,correct}; ratings[level]={hanzi:"s"|"t"|"n"}
 let shuffleOn=true;
-let deck=[],idx=0,mode="reading",level=1,reviewing=null;   // reviewing: null | "s" | "t" | "n"
+let deck=[],idx=0,mode="reading",level=1,deckName="",reviewing=null;   // reviewing: null | "s" | "t" | "n"
 let homeMode="reading";                                    // mode toggle on the home screen
 
 /* ============ SETTINGS ============ */
@@ -2827,6 +2878,11 @@ function applySettings(o){
     const v=o.caps&&o.caps[lv];
     SET.caps[lv]=(typeof v==="number"&&v>=1&&v<=200)?Math.round(v):d.caps[lv];
   });
+  if(o.caps)Object.keys(o.caps).forEach(k=>{      /* per-list caps */
+    if(/^[1-4]$/.test(k))return;
+    const v=o.caps[k];
+    if(typeof v==="number"&&v>=1&&v<=200)SET.caps[k]=Math.round(v);
+  });
   SET.gradDays=Array.isArray(o.gradDays)
     ? o.gradDays.filter(n=>typeof n==="number"&&n>0&&n<=365).map(n=>Math.round(n)).sort((a,b)=>a-b).slice(0,8)
     : d.gradDays.slice();
@@ -2847,28 +2903,23 @@ let canvases=[],revealMode=null,drawLocked=false,eraseMode=false,answeredThisCar
 
 function blankStats(){return{seen:0,correct:0}}
 function stat(lv,md){store.stats[lv]=store.stats[lv]||{};store.stats[lv][md]=store.stats[lv][md]||blankStats();return store.stats[lv][md]}
-/* per-word review counters, kept per skill like ratings */
-function rcount(lv,md){
-  store.reviews=store.reviews||{};
-  store.reviews[lv]=store.reviews[lv]||{reading:{},writing:{}};
-  const R=store.reviews[lv];
-  R.reading=R.reading||{};R.writing=R.writing||{};
-  return R[md];
+/* Progress is filed per WORD per skill, not per level: the same word can sit in
+   an HSK level and in any number of custom lists, and knowing it is knowing it. */
+function rcount(md){
+  store.reviews=store.reviews||{reading:{},writing:{}};
+  store.reviews.reading=store.reviews.reading||{};store.reviews.writing=store.reviews.writing||{};
+  return store.reviews[md];
 }
-/* ratings are kept separately per skill: rmap(level,"reading") and rmap(level,"writing") */
-function rmap(lv,md){
-  store.ratings[lv]=store.ratings[lv]||{reading:{},writing:{}};
-  const R=store.ratings[lv];
-  R.reading=R.reading||{};R.writing=R.writing||{};
-  return R[md];
+function rmap(md){
+  store.ratings=store.ratings||{reading:{},writing:{}};
+  store.ratings.reading=store.ratings.reading||{};store.ratings.writing=store.ratings.writing||{};
+  return store.ratings[md];
 }
-/* per-word last-review timestamps (epoch ms), kept per skill like review counts */
-function rlast(lv,md){
-  store.lastrev=store.lastrev||{};
-  store.lastrev[lv]=store.lastrev[lv]||{reading:{},writing:{}};
-  const R=store.lastrev[lv];
-  R.reading=R.reading||{};R.writing=R.writing||{};
-  return R[md];
+/* per-word last-review timestamps (epoch ms) */
+function rlast(md){
+  store.lastrev=store.lastrev||{reading:{},writing:{}};
+  store.lastrev.reading=store.lastrev.reading||{};store.lastrev.writing=store.lastrev.writing||{};
+  return store.lastrev[md];
 }
 function todayStr(){
   const d=new Date();
@@ -2885,29 +2936,28 @@ function todayStr(){
    push them into long-term memory. Once both are done the word "graduates"
    and is picked by the usual frequency/staleness weighting instead. */
 function gradDays(){return (SET.gradDays&&SET.gradDays.length)?SET.gradDays:[];}
-function grad(lv,md){
-  store.grad=store.grad||{};
-  store.grad[lv]=store.grad[lv]||{reading:{},writing:{}};
-  const G=store.grad[lv];
-  G.reading=G.reading||{};G.writing=G.writing||{};
-  return G[md];
+function grad(md){
+  store.grad=store.grad||{reading:{},writing:{}};
+  store.grad.reading=store.grad.reading||{};store.grad.writing=store.grad.writing||{};
+  return store.grad[md];
 }
 function gradDueAt(rec){const g=gradDays();return rec.t+(g[rec.s]||0)*864e5;}
 function gradPending(rec){return !!rec&&rec.s<gradDays().length;}
 function gradDue(rec,now){return gradPending(rec)&&now>=gradDueAt(rec);}
 
-function reviewList(lv,md,words){
-  const R=rmap(lv,md);
+function reviewList(deck,md){
+  const words=deck.words;
+  const R=rmap(md);
   const solid=words.filter(v=>R[v[0]]==="s").map(v=>v[0]);
   store.daily=store.daily||{};
-  const key=lv+"-"+md,today=todayStr(),cached=store.daily[key];
+  const key=deck.id+"-"+md,today=todayStr(),cached=store.daily[key];
   if(cached&&cached.d===today){
     const done=cached.done||[];
     return cached.w.filter(hz=>R[hz]==="s"&&!done.includes(hz));
   }
   if(!solid.length){delete store.daily[key];return [];}
-  const RC=rcount(lv,md),RL=rlast(lv,md),now=Date.now();
-  const G=grad(lv,md);
+  const RC=rcount(md),RL=rlast(md),now=Date.now();
+  const G=grad(md);
   /* words with a scheduled review that has come due — always included, most
      overdue first; they are not left to chance */
   const due=solid.filter(hz=>gradDue(G[hz],now)).sort((a,b)=>gradDueAt(G[a])-gradDueAt(G[b]));
@@ -2930,7 +2980,7 @@ function reviewList(lv,md,words){
      solid set isn't cycled through every couple of days. At least 1 word is
      always offered whenever anything is solid. The cap governs the random
      sample; due scheduled reviews are added on top so they are never skipped. */
-  const levelCap=(SET.caps&&SET.caps[lv])||25;
+  const levelCap=capFor(deck);
   const cap=Math.max(1,Math.min(levelCap,Math.floor(solid.length*(SET.pct/100))));
   const slots=Math.max(0,cap-due.length);
   /* weighted sampling without replacement (Efraimidis–Spirakis) */
@@ -2944,8 +2994,8 @@ function reviewList(lv,md,words){
 }
 /* Marks a word as handled in today's review-for-the-day session, so it drops
    out of the remaining list even if you re-confirm it as Solid. */
-function markReviewed(lv,md,hz){
-  const key=lv+"-"+md,rec=store.daily&&store.daily[key];
+function markReviewed(deckId,md,hz){
+  const key=deckId+"-"+md,rec=store.daily&&store.daily[key];
   if(rec&&rec.d===todayStr()&&rec.w.includes(hz)){
     rec.done=rec.done||[];
     if(!rec.done.includes(hz)){rec.done.push(hz);saveStore();}
@@ -2954,9 +3004,9 @@ function markReviewed(lv,md,hz){
 /* Today's review progress for the home screen: builds/refreshes the daily
    list as a side effect, then reports how many of today's picks are left
    vs. how many there were in total (so a fully-cleared day can say so). */
-function reviewStatus(lv,md,words){
-  const remaining=reviewList(lv,md,words);
-  const rec=store.daily&&store.daily[lv+"-"+md];
+function reviewStatus(deck,md){
+  const remaining=reviewList(deck,md);
+  const rec=store.daily&&store.daily[deck.id+"-"+md];
   const total=(rec&&rec.d===todayStr())?rec.w.length:remaining.length;
   return{remaining:remaining.length,total};
 }
@@ -2983,6 +3033,7 @@ async function loadStore(){
       if(p&&p.stats){
         store=p;
         store.ratings=store.ratings||{};
+        if(!store.flat1){   /* ---- legacy shapes only: everything below predates the flat store ---- */
         if(store.missed){ /* migrate old missed lists */
           for(const lv in store.missed)(store.missed[lv]||[]).forEach(hz=>{store.ratings[lv]=store.ratings[lv]||{};store.ratings[lv][hz]=store.ratings[lv][hz]||"n";});
           delete store.missed;
@@ -3027,6 +3078,47 @@ async function loadStore(){
               for(const hz in store.ratings[lv][md])store.reviews[lv][md][hz]=1;
             });
           }
+        }
+        }   /* ---- end legacy-only migrations ---- */
+        /* Flatten level-keyed progress to per-word progress. A word belongs to
+           exactly one level, so the level was always redundant — and once the
+           same word can appear in custom lists too, one rating per word per
+           skill is the only consistent answer. Merges rather than overwrites,
+           keeping the strongest rating and the largest counts if a word somehow
+           appears under two levels. */
+        if(!store.flat1){
+          const rank={n:0,t:1,s:2};
+          ["ratings","reviews","lastrev","grad"].forEach(key=>{
+            const box=store[key];
+            if(!box)return;
+            const out={reading:{},writing:{}};
+            Object.keys(box).forEach(lv=>{
+              if(lv==="reading"||lv==="writing")return;      /* already flat */
+              const per=box[lv];
+              if(!per||typeof per!=="object")return;
+              ["reading","writing"].forEach(md=>{
+                const src=per[md];
+                if(!src||typeof src!=="object")return;
+                Object.keys(src).forEach(hz=>{
+                  const cur=out[md][hz],val=src[hz];
+                  if(cur===undefined){out[md][hz]=val;return;}
+                  if(key==="ratings")out[md][hz]=(rank[val]||0)>(rank[cur]||0)?val:cur;
+                  else if(key==="reviews"||key==="lastrev")out[md][hz]=Math.max(cur||0,val||0);
+                  /* grad: keep whichever record is further along */
+                  else if(key==="grad"&&val&&cur&&val.s>cur.s)out[md][hz]=val;
+                });
+              });
+            });
+            /* carry over anything already stored flat */
+            ["reading","writing"].forEach(md=>{
+              const src=box[md];
+              if(src&&typeof src==="object")Object.keys(src).forEach(hz=>{if(!(hz in out[md]))out[md][hz]=src[hz];});
+            });
+            store[key]=out;
+          });
+          delete store.daily;   /* daily lists rebuild against the flattened store */
+          store.flat1=1;
+          saveStore();
         }
       }
     }
@@ -3142,14 +3234,45 @@ function show(id){document.querySelectorAll(".screen").forEach(e=>e.classList.re
 /* ============ HOME ============ */
 const ZI={1:"一",2:"二",3:"三",4:"四"};
 /* ---- deck helpers: one place that knows how a deck's numbers are computed ---- */
-function deckWords(lv){return V.filter(v=>v[3]===lv);}
-function deckStarted(lv){
-  const R=store.ratings&&store.ratings[lv];
-  return !!R&&["reading","writing"].some(md=>Object.keys(R[md]||{}).length>0);
+/* ---- words: the built-in vocabulary plus anything the user added ---- */
+const VIDX={};V.forEach(v=>VIDX[v[0]]=v);
+function customWords(){store.cwords=store.cwords||{};return store.cwords;}
+function customEx(){store.cex=store.cex||{};return store.cex;}
+function wordEntry(hz){return VIDX[hz]||customWords()[hz]||null;}
+function exampleFor(hz){return EX[hz]||customEx()[hz]||null;}
+
+/* ---- decks: an HSK level, or a list the user built ---- */
+function userLists(){store.lists=store.lists||[];return store.lists;}
+function listChop(name){
+  const han=[...String(name)].find(c=>/\p{Script=Han}/u.test(c));
+  return han||(String(name).trim()[0]||"卡").toUpperCase();
 }
-function deckSummary(lv){
-  const words=deckWords(lv);
-  const ms=stat(lv,homeMode),R=rmap(lv,homeMode),RC=rcount(lv,homeMode);
+function listDeck(L){
+  return{id:L.id,kind:"list",name:L.name,chop:listChop(L.name),list:L,
+         words:(L.words||[]).map(wordEntry).filter(Boolean)};
+}
+function levelDeck(lv){return{id:String(lv),kind:"lv",lv,name:"HSK "+lv,chop:ZI[lv],words:deckWords(lv)};}
+function allDecks(){return ALL_LEVELS.map(levelDeck).concat(userLists().map(listDeck));}
+function deckById(id){
+  id=String(id);
+  if(/^[1-9]$/.test(id))return levelDeck(+id);
+  const L=userLists().find(x=>x.id===id);
+  return L?listDeck(L):null;
+}
+function capFor(deck){
+  const c=SET.caps&&SET.caps[deck.id];
+  return (typeof c==="number"&&c>0)?c:(deck.kind==="lv"?25:20);
+}
+function deckWords(lv){return V.filter(v=>v[3]===lv);}
+function deckStarted(deck){
+  return ["reading","writing"].some(md=>{
+    const R=(store.ratings&&store.ratings[md])||{};
+    return deck.words.some(v=>R[v[0]]);
+  });
+}
+function deckSummary(deck){
+  const words=deck.words;
+  const ms=stat(deck.id,homeMode),R=rmap(homeMode),RC=rcount(homeMode);
   let solid=0,tent=0,ratedN=0,revS=0,revT=0,revN=0;
   words.forEach(v=>{
     const g=R[v[0]],c=RC[v[0]]||0;
@@ -3157,30 +3280,46 @@ function deckSummary(lv){
     else if(g==="t"){tent++;revT+=c;}
     else if(g==="n"){ratedN++;revN+=c;}
   });
-  const rs=reviewStatus(lv,homeMode,words);
-  return{lv,name:"HSK "+lv,chop:ZI[lv],words,ms,solid,tent,ratedN,revS,revT,revN,
+  const rs=reviewStatus(deck,homeMode);
+  return{deck,words,ms,solid,tent,ratedN,revS,revT,revN,
          seen:solid+tent+ratedN,notl:words.length-solid-tent,
-         pct:Math.round(100*solid/words.length),review:rs.remaining,revTotal:rs.total};
+         pct:words.length?Math.round(100*solid/words.length):0,
+         review:rs.remaining,revTotal:rs.total};
 }
-/* Everything due across every deck, so a day's work is one button rather than
-   a hunt through the list. */
+/* Which decks' daily lists a word belongs to today — a word can sit in an HSK
+   level and a list at once, and a combined review should satisfy both. */
+function reviewDecksFor(hz){
+  const out=[],today=todayStr(),suffix="-"+mode;
+  Object.keys(store.daily||{}).forEach(k=>{
+    if(k.slice(-suffix.length)!==suffix)return;
+    const rec=store.daily[k];
+    if(rec&&rec.d===today&&(rec.w||[]).indexOf(hz)>=0)out.push(k.slice(0,-suffix.length));
+  });
+  return out;
+}
 function todayParts(){
   const out=[];
-  ALL_LEVELS.forEach(lv=>{
-    const rem=reviewList(lv,homeMode,deckWords(lv));
-    if(rem.length)out.push({lv,label:"HSK "+lv,words:rem});
+  allDecks().forEach(dk=>{
+    if(!dk.words.length)return;
+    const rem=reviewList(dk,homeMode);
+    if(rem.length)out.push({deck:dk,label:dk.name,words:rem});
   });
   return out;
 }
 function startTodayReview(){
   const parts=todayParts();
-  const byHz={};V.forEach(v=>byHz[v[0]]=v);
-  let cards=[];parts.forEach(p=>p.words.forEach(hz=>{if(byHz[hz])cards.push(byHz[hz]);}));
+  const seen={},cards=[];
+  parts.forEach(p=>p.words.forEach(hz=>{
+    if(seen[hz])return;                 /* a word in two decks is still one card */
+    seen[hz]=1;
+    const e=wordEntry(hz);if(e)cards.push(e);
+  }));
   if(!cards.length)return;
   navStack=[];
-  level=0;mode=homeMode;reviewing="x";
-  if(shuffleOn)cards=[...cards].sort(()=>Math.random()-0.5);
-  deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];
+  level=0;deckName="All decks";mode=homeMode;reviewing="x";
+  let cs=cards;
+  if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
+  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];
   show("scr-card");renderCard();renderReturnBar();
 }
 function toggleDeck(id){
@@ -3196,11 +3335,15 @@ function renderHome(){
   const wrap=$("#levels");wrap.innerHTML="";
   const open=new Set(SET.open||[]);
   const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const zi=homeMode==="reading"?"认":"写";
+  const verb=homeMode==="reading"?"Read":"Write";
+  const avg=(tot,n)=>n?`<i>rev/word: ${(tot/n).toFixed(1)}</i>`:"";
 
   /* ---- today ---- */
   const parts=todayParts();
-  const dueTotal=parts.reduce((n,p)=>n+p.words.length,0);
-  const anyScheduled=ALL_LEVELS.some(lv=>reviewStatus(lv,homeMode,deckWords(lv)).total>0);
+  const dueWords=new Set();parts.forEach(p=>p.words.forEach(hz=>dueWords.add(hz)));
+  const dueTotal=dueWords.size;
+  const anyScheduled=allDecks().some(dk=>dk.words.length&&reviewStatus(dk,homeMode).total>0);
   if(dueTotal){
     const t=document.createElement("div");
     t.className="today";
@@ -3218,50 +3361,31 @@ function renderHome(){
     wrap.appendChild(t);
   }
 
-  /* ---- which levels to show ---- */
-  let levels=ALL_LEVELS.slice();
-  let hidden=0;
-  if(!SET.showAll){
-    const started=levels.filter(deckStarted);
-    const upto=Math.max(2,(started.length?Math.max(...started):0)+1);
-    const vis=levels.filter(lv=>lv<=upto);
-    hidden=levels.length-vis.length;
-    levels=vis;
-  }
-
-  const sec=document.createElement("div");
-  sec.className="sec";sec.textContent="HSK levels";
-  wrap.appendChild(sec);
-
-  const zi=homeMode==="reading"?"认":"写";
-  const verb=homeMode==="reading"?"Read":"Write";
-  const avg=(tot,n)=>n?`<i>rev/word: ${(tot/n).toFixed(1)}</i>`:"";
-
-  levels.forEach(lv=>{
-    const D=deckSummary(lv);
-    const id=String(lv);
-    if(!open.has(id)){
+  const section=title=>{const e=document.createElement("div");e.className="sec";e.textContent=title;wrap.appendChild(e);};
+  const renderDeck=dk=>{
+    const D=deckSummary(dk);
+    if(!open.has(dk.id)){
       const row=document.createElement("button");
       row.className="rowdeck"+(D.seen?"":" fresh");
-      row.dataset.open=id;
-      row.innerHTML=`<div class="chop">${D.chop}</div>
+      row.dataset.open=dk.id;
+      row.innerHTML=`<div class="chop">${esc(dk.chop)}</div>
         <div class="mid">
-          <div class="nm">${esc(D.name)}</div>
-          <div class="sub">${D.words.length} words · ${D.pct}% solid</div>
+          <div class="nm">${esc(dk.name)}</div>
+          <div class="sub">${D.words.length} word${D.words.length===1?"":"s"} · ${D.pct}% solid</div>
           <div class="minibar"><i style="width:${D.pct}%"></i></div>
         </div>
-        <div class="rt">${D.review?`<span class="due-badge" data-rev="${lv}">↻ ${D.review} due</span>`:""}<span class="chev">›</span></div>`;
+        <div class="rt">${D.review?`<span class="due-badge" data-rev="${esc(dk.id)}">↻ ${D.review} due</span>`:""}<span class="chev">›</span></div>`;
       wrap.appendChild(row);
       return;
     }
     const el=document.createElement("div");
     el.className="level";
     el.innerHTML=`
-      <div class="lvl-head" data-open="${id}">
-        <div class="chop">${D.chop}</div>
+      <div class="lvl-head" data-open="${esc(dk.id)}">
+        <div class="chop">${esc(dk.chop)}</div>
         <div class="mid">
-          <h2>${esc(D.name)}</h2>
-          <div class="count">${D.words.length} words</div>
+          <h2>${esc(dk.name)}</h2>
+          <div class="count">${D.words.length} word${D.words.length===1?"":"s"}</div>
         </div>
         <span class="chev">⌄</span>
       </div>
@@ -3271,18 +3395,31 @@ function renderHome(){
         <span>${D.ms.seen} review${D.ms.seen===1?"":"s"} in total</span>
       </div>
       <div class="mode-btns">
-        <button class="all-btn" data-lv="${lv}"><span class="zi">${zi}</span>${verb} all ${D.words.length}</button>
+        <button class="all-btn" data-deck="${esc(dk.id)}"><span class="zi">${zi}</span>${verb} all ${D.words.length}</button>
       </div>
       <div class="chips">
-        <button class="chip s" data-lv="${lv}" data-f="s" ${D.solid?"":"disabled"}><b>${D.solid}</b>Solid${avg(D.revS,D.solid)}</button>
-        <button class="chip t" data-lv="${lv}" data-f="t" ${D.tent?"":"disabled"}><b>${D.tent}</b>Tentative${avg(D.revT,D.tent)}</button>
-        <button class="chip n" data-lv="${lv}" data-f="n" ${D.notl?"":"disabled"}><b>${D.notl}</b>Not learned${avg(D.revN,D.ratedN)}</button>
+        <button class="chip s" data-deck="${esc(dk.id)}" data-f="s" ${D.solid?"":"disabled"}><b>${D.solid}</b>Solid${avg(D.revS,D.solid)}</button>
+        <button class="chip t" data-deck="${esc(dk.id)}" data-f="t" ${D.tent?"":"disabled"}><b>${D.tent}</b>Tentative${avg(D.revT,D.tent)}</button>
+        <button class="chip n" data-deck="${esc(dk.id)}" data-f="n" ${D.notl?"":"disabled"}><b>${D.notl}</b>Not learned${avg(D.revN,D.ratedN)}</button>
       </div>
-      ${D.review?`<button class="review-btn" data-lv="${lv}">↻ ${D.review} word${D.review>1?"s":""} for review</button>`
-        :D.revTotal?`<div class="review-done">✓ Review complete</div>`:""}`;
+      ${D.review?`<button class="review-btn" data-deck="${esc(dk.id)}">↻ ${D.review} word${D.review>1?"s":""} for review</button>`
+        :D.revTotal?`<div class="review-done">✓ Review complete</div>`:""}
+      ${dk.kind==="list"?`<button class="list-edit" data-edit="${esc(dk.id)}">✎ Edit list</button>`:""}`;
     wrap.appendChild(el);
-  });
+  };
 
+  /* ---- HSK levels ---- */
+  let levels=ALL_LEVELS.map(levelDeck);
+  let hidden=0;
+  if(!SET.showAll){
+    const started=levels.filter(deckStarted).map(d=>d.lv);
+    const upto=Math.max(2,(started.length?Math.max(...started):0)+1);
+    const vis=levels.filter(d=>d.lv<=upto);
+    hidden=levels.length-vis.length;
+    levels=vis;
+  }
+  section("HSK levels");
+  levels.forEach(renderDeck);
   if(hidden||SET.showAll){
     const b=document.createElement("button");
     b.className="showall";
@@ -3291,21 +3428,40 @@ function renderHome(){
     wrap.appendChild(b);
   }
 
+  /* ---- user lists ---- */
+  section("My lists");
+  const lists=userLists();
+  if(!lists.length){
+    const p=document.createElement("div");
+    p.className="set-note";
+    p.style.margin="0 3px 8px";
+    p.textContent="Build a deck from a textbook chapter or any words you choose — words already in the app keep their examples and progress.";
+    wrap.appendChild(p);
+  }
+  lists.map(listDeck).forEach(renderDeck);
+  const nb=document.createElement("button");
+  nb.className="review-btn";nb.style.borderStyle="solid";nb.id="new-list";
+  nb.textContent="＋ New list";
+  wrap.appendChild(nb);
+
+  /* ---- wiring ---- */
   const go=$("#today-go");
   if(go)go.onclick=startTodayReview;
+  nb.onclick=()=>newList();
   wrap.querySelectorAll("[data-open]").forEach(el=>el.onclick=e=>{
     if(e.target.closest("[data-rev]"))return;
     toggleDeck(el.dataset.open);
   });
   wrap.querySelectorAll("[data-rev]").forEach(b=>b.onclick=e=>{
-    e.stopPropagation();startSession(+b.dataset.rev,homeMode,"x");
+    e.stopPropagation();startSession(b.dataset.rev,homeMode,"x");
   });
-  wrap.querySelectorAll(".all-btn").forEach(b=>b.onclick=()=>startSession(+b.dataset.lv,homeMode,null));
+  wrap.querySelectorAll(".all-btn").forEach(b=>b.onclick=()=>startSession(b.dataset.deck,homeMode,null));
   wrap.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     if(b.disabled)return;
-    startSession(+b.dataset.lv,homeMode,b.dataset.f);
+    startSession(b.dataset.deck,homeMode,b.dataset.f);
   });
-  wrap.querySelectorAll(".review-btn").forEach(b=>b.onclick=()=>startSession(+b.dataset.lv,homeMode,"x"));
+  wrap.querySelectorAll(".review-btn[data-deck]").forEach(b=>b.onclick=()=>startSession(b.dataset.deck,homeMode,"x"));
+  wrap.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openList(b.dataset.edit));
 }
 document.querySelectorAll("#mode-seg button").forEach(b=>b.onclick=()=>{
   homeMode=b.dataset.md;
@@ -3407,19 +3563,32 @@ $("#restore-file").onchange=async e=>{
 };
 
 /* Wipes progress for one level, or for everything when lv is falsy. */
-function wipeProgress(lv){
-  if(!lv){store={stats:{},ratings:{}};return;}
-  ["stats","ratings","reviews","lastrev","grad"].forEach(k=>{if(store[k])delete store[k][lv];});
-  if(store.daily)["reading","writing"].forEach(md=>delete store.daily[lv+"-"+md]);
+function wipeProgress(deckId){
+  if(!deckId){   /* everything — but the lists and the words you added survive */
+    const keep={lists:store.lists,cwords:store.cwords,cex:store.cex,flat1:store.flat1,relevel2:store.relevel2};
+    store={stats:{},ratings:{reading:{},writing:{}}};
+    Object.keys(keep).forEach(k=>{if(keep[k]!==undefined)store[k]=keep[k];});
+    return;
+  }
+  const dk=deckById(deckId);
+  if(!dk)return;
+  if(store.stats)delete store.stats[dk.id];
+  const hzs=dk.words.map(v=>v[0]);
+  ["ratings","reviews","lastrev","grad"].forEach(k=>{
+    if(!store[k])return;
+    ["reading","writing"].forEach(md=>{const m=store[k][md];if(m)hzs.forEach(hz=>delete m[hz]);});
+  });
+  if(store.daily)["reading","writing"].forEach(md=>delete store.daily[dk.id+"-"+md]);
 }
 /* Reset is two-step: the safe option is the default, and even after choosing
    to reset the user is offered a backup before anything is deleted. */
-async function doReset(lv){
-  const what=lv?`HSK ${lv}`:"all levels";
-  const step1=await showDialog(lv?`Reset HSK ${lv} progress?`:"Reset all progress?",
+async function doReset(deckId){
+  const dk=deckId?deckById(deckId):null;
+  const what=dk?dk.name:"every deck";
+  const step1=await showDialog(dk?`Reset ${dk.name} progress?`:"Reset all progress?",
     `This permanently erases every rating, review count and review date for ${what}, in both reading and writing. It cannot be undone.`,
     [{label:"No, keep my progress",value:false,kind:"safe"},
-     {label:lv?`Yes, reset HSK ${lv}`:"Yes, reset everything",value:true,kind:"danger"}]);
+     {label:dk?`Yes, reset ${dk.name}`:"Yes, reset everything",value:true,kind:"danger"}]);
   if(!step1)return;
   const step2=await showDialog("Back up first?",
     "You can save a copy of your progress before it's erased, so you could restore it later.",
@@ -3436,9 +3605,239 @@ async function doReset(lv){
       if(!cont)return;
     }
   }
-  wipeProgress(lv);
+  wipeProgress(deckId);
   saveStore();renderHome();renderSettings();
 }
+
+/* ============ WORD LISTS ============ */
+let curList=null,DICT=null,DICTN=null,dictPromise=null,addHits=[];
+
+function loadDict(){
+  if(DICT)return Promise.resolve(DICT);
+  if(dictPromise)return dictPromise;
+  dictPromise=fetch("dict.json").then(r=>r.ok?r.json():{}).then(d=>{
+    DICT=d;
+    DICTN=Object.keys(d).map(hz=>[hz,normalizeSearch(d[hz][0]),d[hz][1].toLowerCase()]);
+    return d;
+  }).catch(()=>{DICT={};DICTN=[];return DICT;});
+  return dictPromise;
+}
+function listById(id){return userLists().find(L=>L.id===id)||null;}
+function newListId(){return "L"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+async function newList(){
+  const name=await showPrompt("New list","Name it after the chapter, topic or textbook section.","","e.g. Chapter 5 — Housing");
+  if(name==null)return;
+  const nm=String(name).trim();
+  if(!nm)return;
+  const L={id:newListId(),name:nm,words:[]};
+  userLists().push(L);saveStore();
+  openList(L.id);
+}
+function openList(id){curList=id;renderList();show("scr-list");}
+
+function wordRow(hz,opts){
+  const e=wordEntry(hz)||(DICT&&DICT[hz]?[hz,DICT[hz][0],DICT[hz][1],0]:null);
+  const esc=t=>String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const py=e?e[1]:"",en=e?e[2]:"";
+  return `<div class="wrow${opts.dim?" dim":""}" data-hz="${esc(hz)}">
+    <span class="wh">${esc(hz)}</span>
+    <span class="wm">
+      <div class="wp">${esc(py)||"&nbsp;"}</div>
+      <span class="we">${esc(en)||"<i>needs a meaning</i>"}</span>
+      ${opts.src?`<div class="wsrc">${esc(opts.src)}</div>`:""}
+    </span>
+    <button class="wbtn ${opts.cls||""}" data-act="${opts.act}" data-hz="${esc(hz)}">${esc(opts.btn)}</button>
+  </div>`;
+}
+
+function renderList(){
+  const L=listById(curList);
+  if(!L){show("scr-home");return;}
+  $("#list-title").textContent=L.name;
+  const body=$("#list-body");
+  const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const rows=(L.words||[]).map(hz=>wordRow(hz,{act:"rm",btn:"✕",cls:"rm",
+      src:VIDX[hz]?("HSK "+VIDX[hz][3]):"added by you"})).join("");
+  body.innerHTML=`
+    <input class="list-name" id="list-rename" value="${esc(L.name)}">
+    <div class="add-tools">
+      <button id="list-add">＋ Add words</button>
+      <button id="list-study" style="background:var(--cinnabar);border-color:var(--cinnabar);color:#fff">Study this list</button>
+    </div>
+    <div class="set-note" style="margin:10px 3px">${L.words.length} word${L.words.length===1?"":"s"}. Words already in the app keep their examples and share their progress with their HSK deck.</div>
+    ${rows||`<div class="set-note" style="margin:16px 3px">No words yet — tap <b>Add words</b>.</div>`}
+    <button class="reset" id="list-del">Delete this list</button>`;
+  const rn=$("#list-rename");
+  rn.onchange=()=>{const v=rn.value.trim();if(v){L.name=v;saveStore();$("#list-title").textContent=v;}else rn.value=L.name;};
+  $("#list-add").onclick=()=>openAdd(L.id);
+  $("#list-study").onclick=()=>{
+    if(!L.words.length){showDialog("Nothing to study yet","Add some words to this list first.",[{label:"OK",value:1,kind:"safe"}]);return;}
+    startSession(L.id,homeMode,null);
+  };
+  body.querySelectorAll('[data-act="rm"]').forEach(b=>b.onclick=()=>{
+    L.words=L.words.filter(x=>x!==b.dataset.hz);saveStore();renderList();
+  });
+  $("#list-del").onclick=async()=>{
+    const go=await showDialog(`Delete “${L.name}”?`,
+      "The list is removed. The words themselves stay in the app, and your ratings for them are untouched.",
+      [{label:"Keep the list",value:false,kind:"safe"},{label:"Delete it",value:true,kind:"danger"}]);
+    if(!go)return;
+    store.lists=userLists().filter(x=>x.id!==L.id);
+    if(store.daily)["reading","writing"].forEach(md=>delete store.daily[L.id+"-"+md]);
+    SET.open=(SET.open||[]).filter(x=>x!==L.id);saveSettings();
+    saveStore();renderHome();show("scr-home");
+  };
+}
+
+/* ---- adding words ---- */
+function openAdd(listId){
+  curList=listId;
+  const L=listById(listId);
+  $("#add-title").textContent="Add to "+(L?L.name:"list");
+  $("#add-input").value="";addHits=[];
+  $("#add-note").textContent="Dictionary loading…";
+  $("#add-results").innerHTML="";
+  show("scr-add");
+  loadDict().then(()=>{
+    $("#add-note").textContent=`Type a word in characters or pinyin. ${Object.keys(DICT).length.toLocaleString()} dictionary entries are available beyond the app’s own ${V.length.toLocaleString()} words.`;
+  });
+}
+function searchAll(q){
+  const nq=normalizeSearch(q);
+  if(!nq)return [];
+  const han=/[一-鿿]/.test(q);
+  const out=[],seen={};
+  const push=(hz,src)=>{if(seen[hz])return;seen[hz]=1;out.push({hz,src});};
+  if(han){
+    const raw=q.trim();
+    V.forEach(v=>{if(v[0].includes(raw))push(v[0],"HSK "+v[3]);});
+    Object.keys(customWords()).forEach(hz=>{if(hz.includes(raw))push(hz,"added by you");});
+    if(DICT)Object.keys(DICT).forEach(hz=>{if(hz.includes(raw))push(hz,"dictionary");});
+    if(/^[一-鿿]+$/.test(raw))push(raw,"new word");
+  }else{
+    V.forEach(v=>{
+      if(normalizeSearch(v[1]).includes(nq)||normalizeSearch(v[2]).includes(nq))push(v[0],"HSK "+v[3]);
+    });
+    if(DICTN)for(let i=0;i<DICTN.length&&out.length<80;i++){
+      const [hz,py,en]=DICTN[i];
+      if(py.includes(nq)||en.includes(nq))push(hz,"dictionary");
+    }
+  }
+  return out.slice(0,40);
+}
+function renderAddResults(){
+  const L=listById(curList);
+  const inList=new Set((L&&L.words)||[]);
+  const box=$("#add-results");
+  if(!addHits.length){box.innerHTML="";return;}
+  box.innerHTML=addHits.map(h=>{
+    const known=!!wordEntry(h.hz)||!!(DICT&&DICT[h.hz]);
+    if(inList.has(h.hz))return wordRow(h.hz,{act:"none",btn:"✓ added",cls:"added",src:h.src,dim:true});
+    if(!known)return wordRow(h.hz,{act:"fill",btn:"✎ details",cls:"need",src:"not in the dictionary"});
+    return wordRow(h.hz,{act:"add",btn:"＋",src:h.src});
+  }).join("");
+  box.querySelectorAll('[data-act="add"]').forEach(b=>b.onclick=()=>addWordToList(b.dataset.hz));
+  box.querySelectorAll('[data-act="fill"]').forEach(b=>b.onclick=()=>fillWord(b.dataset.hz));
+}
+/* Auto-pinyin from the per-character readings — a usable first guess when a
+   word is in neither the app nor the dictionary. */
+function guessPinyin(hz){
+  const parts=[...hz].map(c=>{
+    if(CH[c])return CH[c][0];
+    if(DICT&&DICT[c])return DICT[c][0];
+    return null;
+  });
+  /* a partial guess is worse than none — it reads as a real answer */
+  return parts.every(Boolean)?parts.join(""):"";
+}
+async function fillWord(hz){
+  const d=DICT&&DICT[hz];
+  const cur=customWords()[hz];
+  const vals=await showForm("Add “"+hz+"”",[
+    {key:"py",label:"Pinyin",value:cur?cur[1]:(d?d[0]:guessPinyin(hz)),placeholder:"e.g. měiguó"},
+    {key:"en",label:"Meaning",value:cur?cur[2]:(d?d[1]:""),placeholder:"e.g. United States"},
+    {key:"ex",label:"Example sentence (optional)",value:(customEx()[hz]||[])[0]||"",placeholder:"optional"},
+    {key:"exen",label:"Example translation (optional)",value:(customEx()[hz]||[])[2]||"",placeholder:"optional"}
+  ]);
+  if(!vals)return false;
+  const py=(vals.py||"").trim(),en=(vals.en||"").trim();
+  if(!en){await showDialog("A meaning is needed","Give the word an English meaning so the card has something to test you on.",[{label:"OK",value:1,kind:"safe"}]);return false;}
+  customWords()[hz]=[hz,py||guessPinyin(hz),en,0];
+  const ex=(vals.ex||"").trim();
+  if(ex)customEx()[hz]=[ex,"",(vals.exen||"").trim()];
+  else delete customEx()[hz];
+  saveStore();
+  addWordToList(hz,true);
+  return true;
+}
+function addWordToList(hz,silent){
+  const L=listById(curList);
+  if(!L)return;
+  if(!wordEntry(hz)){
+    const d=DICT&&DICT[hz];
+    if(d)customWords()[hz]=[hz,d[0],d[1],0];
+    else{fillWord(hz);return;}
+  }
+  if(L.words.indexOf(hz)<0)L.words.push(hz);
+  saveStore();
+  renderAddResults();
+}
+
+/* ---- paste a whole chapter ---- */
+function parsePasted(text){
+  const out=[];
+  String(text).split(/[\n;]+/).forEach(line=>{
+    let t=line.trim();
+    if(!t)return;
+    const han=(t.match(/[一-鿿]+/g)||[])[0];
+    if(han){out.push(han);return;}
+    /* no characters on the line — treat the first field as pinyin/English */
+    const q=t.split(/[\t,—–\-]/)[0].trim();
+    if(!q)return;
+    const hits=searchAll(q);
+    if(hits.length)out.push(hits[0].hz);
+    else out.push({miss:q});
+  });
+  return out;
+}
+async function pasteFlow(){
+  await loadDict();
+  const txt=await showArea("Paste your list",
+    "One word per line. Characters work best; pinyin or English is matched against the dictionary. Anything after a dash or tab is ignored.",
+    "好吃\n美国 — America\nketing\nbedroom");
+  if(txt==null)return;
+  const parsed=parsePasted(txt);
+  const misses=parsed.filter(x=>x&&x.miss).map(x=>x.miss);
+  const hzs=parsed.filter(x=>typeof x==="string");
+  const uniq=[];const seen={};
+  hzs.forEach(h=>{if(!seen[h]){seen[h]=1;uniq.push(h);}});
+  addHits=uniq.map(hz=>({hz,src:VIDX[hz]?("HSK "+VIDX[hz][3]):(DICT&&DICT[hz]?"dictionary":"not in the dictionary")}));
+  /* everything recognised goes straight in; the rest stay listed for editing */
+  let added=0;
+  const L=listById(curList);
+  uniq.forEach(hz=>{
+    if(!wordEntry(hz)&&DICT&&DICT[hz])customWords()[hz]=[hz,DICT[hz][0],DICT[hz][1],0];
+    if(wordEntry(hz)&&L.words.indexOf(hz)<0){L.words.push(hz);added++;}
+  });
+  saveStore();
+  const need=uniq.filter(hz=>!wordEntry(hz)).length;
+  $("#add-input").value="";
+  renderAddResults();
+  const bits=[`${added} word${added===1?"":"s"} added`];
+  if(need)bits.push(`${need} need${need===1?"s":""} pinyin and a meaning — tap “✎ details”`);
+  if(misses.length)bits.push(`${misses.length} line${misses.length===1?"":"s"} could not be matched: ${misses.slice(0,6).join(", ")}`);
+  $("#add-note").textContent=bits.join(" · ");
+}
+
+$("#list-back").onclick=()=>{renderHome();show("scr-home");};
+$("#add-back").onclick=()=>{renderList();show("scr-list");};
+$("#add-done").onclick=()=>{renderList();show("scr-list");};
+$("#paste-btn").onclick=()=>pasteFlow();
+$("#add-input").oninput=e=>{
+  const q=e.target.value;
+  if(!q.trim()){addHits=[];renderAddResults();return;}
+  loadDict().then(()=>{addHits=searchAll(q);renderAddResults();});
+};
 
 /* ============ SETTINGS SCREEN ============ */
 /* A text-entry variant of showDialog, for exact values that a stepper or a
@@ -3466,6 +3865,58 @@ function showPrompt(title,body,initial,placeholder){
     back.onclick=e=>{if(e.target===back)close(null);};
     back.classList.add("on");
     setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},0);
+  });
+}
+
+/* A multi-field version of showPrompt, for the details a new word needs. */
+function showForm(title,fields){
+  return new Promise(resolve=>{
+    const back=$("#modal-back"),bodyEl=$("#modal-body");
+    $("#modal-title").textContent=title;
+    bodyEl.innerHTML="";
+    const inputs={};
+    fields.forEach(f=>{
+      const lab=document.createElement("div");lab.className="form-lab";lab.textContent=f.label;
+      bodyEl.appendChild(lab);
+      const inp=document.createElement("input");
+      inp.type="text";inp.className="modal-input";inp.value=f.value==null?"":String(f.value);
+      inp.placeholder=f.placeholder||"";
+      bodyEl.appendChild(inp);inputs[f.key]=inp;
+    });
+    const box=$("#modal-btns");box.innerHTML="";
+    const close=v=>{back.classList.remove("on");document.removeEventListener("keydown",onKey);resolve(v);};
+    const vals=()=>{const o={};Object.keys(inputs).forEach(k=>o[k]=inputs[k].value);return o;};
+    const mk=(label,cls,fn)=>{const b=document.createElement("button");b.textContent=label;b.className=cls;b.onclick=fn;box.appendChild(b);};
+    mk("Save","safe",()=>close(vals()));
+    mk("Cancel","plain",()=>close(null));
+    const onKey=e=>{if(e.key==="Escape"){e.preventDefault();close(null);}};
+    document.addEventListener("keydown",onKey);
+    back.onclick=e=>{if(e.target===back)close(null);};
+    back.classList.add("on");
+    const first=fields[0]&&inputs[fields[0].key];
+    if(first)setTimeout(()=>{try{first.focus();first.select();}catch(e){}},0);
+  });
+}
+/* A big text box, for pasting a whole chapter at once. */
+function showArea(title,body,placeholder){
+  return new Promise(resolve=>{
+    const back=$("#modal-back"),bodyEl=$("#modal-body");
+    $("#modal-title").textContent=title;
+    bodyEl.innerHTML="";
+    if(body){const p=document.createElement("div");p.textContent=body;p.style.marginBottom="10px";bodyEl.appendChild(p);}
+    const ta=document.createElement("textarea");
+    ta.className="modal-area";ta.placeholder=placeholder||"";
+    bodyEl.appendChild(ta);
+    const box=$("#modal-btns");box.innerHTML="";
+    const close=v=>{back.classList.remove("on");document.removeEventListener("keydown",onKey);resolve(v);};
+    const mk=(label,cls,fn)=>{const b=document.createElement("button");b.textContent=label;b.className=cls;b.onclick=fn;box.appendChild(b);};
+    mk("Add these words","safe",()=>close(ta.value));
+    mk("Cancel","plain",()=>close(null));
+    const onKey=e=>{if(e.key==="Escape"){e.preventDefault();close(null);}};
+    document.addEventListener("keydown",onKey);
+    back.onclick=e=>{if(e.target===back)close(null);};
+    back.classList.add("on");
+    setTimeout(()=>{try{ta.focus();}catch(e){}},0);
   });
 }
 
@@ -3504,9 +3955,9 @@ function settingsSpec(){
        get:()=>SET.showStats,set:v=>{SET.showStats=v;saveSettings();}}
     ]},
     {title:"Daily review",note:"“Words for review” draws from words you have rated Solid. Each level offers up to its own number of words per day, and never more than the share below.",
-     rows:[1,2,3,4].map(lv=>({
-      type:"stepper",t:"HSK "+lv,s:"Words offered per day",min:1,max:200,step:5,
-      get:()=>SET.caps[lv],set:v=>{SET.caps[lv]=v;saveSettings();invalidateDaily();}
+     rows:allDecks().map(dk=>({
+      type:"stepper",t:dk.name,s:"Words offered per day",min:1,max:200,step:5,
+      get:()=>capFor(dk),set:v=>{SET.caps[dk.id]=v;saveSettings();invalidateDaily();}
      })).concat([
       {type:"stepper",t:"Share of Solid words",s:"Upper limit as a percentage of that level’s Solid pile",
        min:5,max:100,step:5,suffix:"%",
@@ -3532,13 +3983,18 @@ function settingsSpec(){
     ]},
     {title:"Pronunciation",rows:[{type:"custom",id:"voice-row",cls:"voice-row"}],
      note:"Speech uses the Chinese voices installed on this device; an app cannot add them."},
+    {title:"Word lists",note:"Lists collate words into your own decks — a textbook chapter, a topic, anything. Progress is shared with the word’s HSK deck.",
+     rows:userLists().map(L=>({
+       type:"action",t:L.name,s:`${(L.words||[]).length} word${(L.words||[]).length===1?"":"s"}`,
+       act:()=>openList(L.id)
+     })).concat([{type:"action",t:"＋ New list",s:"Name it and start adding words",act:()=>newList()}])},
     {title:"Data",rows:[
       {type:"action",t:"Back up progress",s:"Save a dated file with every rating and review date",act:doBackup},
       {type:"action",t:"Restore from backup",s:"Replace current progress with a backup file",act:doRestore},
       {type:"choice",t:"Reset progress",s:"Erase ratings and review history",danger:true,val:()=>"",
-       opts:[{v:0,label:"All levels"},{v:1,label:"HSK 1 only"},{v:2,label:"HSK 2 only"},{v:3,label:"HSK 3 only"},{v:4,label:"HSK 4 only"}],
-       get:()=>null,set:v=>doReset(+v),choiceTitle:"Reset which levels?",
-       choiceBody:"Pick what to erase. You will be asked to confirm, and offered a backup first."}
+       opts:[{v:"",label:"Every deck"}].concat(allDecks().map(dk=>({v:dk.id,label:dk.name+" only"}))),
+       get:()=>null,set:v=>doReset(v),choiceTitle:"Reset which deck?",
+       choiceBody:"Pick what to erase. You will be asked to confirm, and offered a backup first. Lists and the words you added are kept — only progress is erased."}
     ]},
     {title:"About",rows:[
       {type:"info",t:"汉字卡 HSK Flashcards",s:"Version "+APP_VERSION},
@@ -3627,7 +4083,8 @@ function runSearch(q){
   const box=$("#search-results");
   const nq=normalizeSearch(q);
   if(!nq){box.style.display="none";box.innerHTML="";return;}
-  const matches=V.filter(v=>normalizeSearch(v[2]).includes(nq)||normalizeSearch(v[1]).includes(nq)).slice(0,25);
+  const pool=V.concat(Object.keys(customWords()).map(hz=>customWords()[hz]));
+  const matches=pool.filter(v=>normalizeSearch(v[2]).includes(nq)||normalizeSearch(v[1]).includes(nq)).slice(0,25);
   box.innerHTML=matches.length?matches.map(v=>`
       <button class="search-hit" data-hz="${v[0]}" data-lv="${v[3]}">
         <span class="sh-hz">${v[0]}</span>
@@ -3675,27 +4132,28 @@ $("#return-bar").onclick=()=>popNav();
    normal level/bucket flow, tagged reviewing="q" so it doesn't touch the
    daily words-for-review tracking and skips the session-complete screen. */
 function startSearchCard(hz,lv,remember){
-  const entry=V.find(v=>v[0]===hz&&v[3]===lv);
+  const entry=wordEntry(hz);
   if(!entry)return;
   if(remember&&deck.length&&$("#scr-card").classList.contains("active")&&
      !(deck.length===1&&deck[0][0]===hz))navStack.push(snapshotSession());
-  level=lv;mode=remember?mode:homeMode;reviewing="q";
+  level=lv;deckName=VIDX[hz]?("HSK "+entry[3]):"Lookup";mode=remember?mode:homeMode;reviewing="q";
   deck=[entry];idx=0;sess={s:0,t:0,n:0};given=[];
   show("scr-card");renderCard();renderReturnBar();
 }
 
 /* ============ SESSION ============ */
-function startSession(lv,md,filter){
+function startSession(deckId,md,filter){
+  const dk=deckById(deckId);
+  if(!dk)return;
   navStack=[];renderReturnBar();
-  level=lv;mode=md;reviewing=filter;
-  const R=rmap(lv,md);
-  let cards=V.filter(v=>v[3]===lv);
-  const RC=rcount(lv,md);
+  level=dk.id;deckName=dk.name;mode=md;reviewing=filter;
+  const R=rmap(md);
+  let cards=dk.words.slice();
   if(filter==="s")cards=cards.filter(v=>R[v[0]]==="s");
   else if(filter==="t")cards=cards.filter(v=>R[v[0]]==="t");
   else if(filter==="n")cards=cards.filter(v=>(R[v[0]]||"n")==="n");
   else if(filter==="x"){ /* today's "words for review" sample from the solid pile */
-    const dl=reviewList(lv,md,cards);
+    const dl=reviewList(dk,md);
     const byHz={};cards.forEach(c=>byHz[c[0]]=c);
     cards=dl.map(hz=>byHz[hz]).filter(Boolean);
   }
@@ -3721,8 +4179,8 @@ function endSession(){
   }
   const total=sess.s+sess.t+sess.n;
   $("#done-summary").textContent=total
-    ?`${total} of ${deck.length} cards rated — ✓ ${sess.s} solid · 〜 ${sess.t} tentative · ✗ ${sess.n} not learned. (${level?"HSK "+level:"all decks"}, ${mode} mode)`
-    :`Browsed ${deck.length} card${deck.length===1?"":"s"} without rating. (${level?"HSK "+level:"all decks"}, ${mode} mode)`;
+    ?`${total} of ${deck.length} cards rated — ✓ ${sess.s} solid · 〜 ${sess.t} tentative · ✗ ${sess.n} not learned. (${deckName||"all decks"}, ${mode} mode)`
+    :`Browsed ${deck.length} card${deck.length===1?"":"s"} without rating. (${deckName||"all decks"}, ${mode} mode)`;
   show("scr-done");
 }
 
@@ -3730,7 +4188,7 @@ function updateHead(){
   $("#back-btn").style.visibility=idx>0?"visible":"hidden";
   $("#prog-bar").style.width=Math.round(100*idx/deck.length)+"%";
   const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Review",q:"Search"}[reviewing]||"";
-  const who=level?`HSK ${level}`:"All decks";
+  const who=deckName||"All decks";
   $("#session-info").textContent=`${who} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}`;
 }
 
@@ -3739,9 +4197,9 @@ function updateHead(){
 function cardLevel(){return (deck[idx]&&deck[idx][3])||level;}
 function cardStat(hz){
   const lv=cardLevel();
-  const reviews=rcount(lv,mode)[hz]||0;
+  const reviews=rcount(mode)[hz]||0;
   if(!reviews)return "New";
-  const t=rlast(lv,mode)[hz];
+  const t=rlast(mode)[hz];
   let ago="";
   if(t){
     const days=Math.floor((Date.now()-t)/864e5);
@@ -3799,7 +4257,8 @@ function bindAudio(card){
 /* Other HSK words that share a character, nearest level first, shortest first
    — so the suggestions are words worth knowing rather than obscure compounds. */
 function relatedWords(ch,exclude,lv){
-  return V.filter(v=>v[0]!==exclude&&v[0].includes(ch))
+  return V.concat(Object.keys(customWords()).map(hz=>customWords()[hz]))
+          .filter(v=>v[0]!==exclude&&v[0].includes(ch))
           .sort((a,b)=>(Math.abs(a[3]-lv)-Math.abs(b[3]-lv))||(a[0].length-b[0].length)||(a[3]-b[3]))
           .slice(0,6);
 }
@@ -3850,7 +4309,7 @@ function bindZiJumps(card){
 
 function readingBack(hz,py,en){
   const card=$("#card");
-  const ex=EX[hz];
+  const ex=exampleFor(hz);
   $("#face-back").innerHTML=`
     <button class="flip-back" id="fb-btn">↺ Flip back</button>
     <div class="small-hanzi">${hz}</div>
@@ -3888,7 +4347,7 @@ function readingBack(hz,py,en){
 /* ---------- Writing back ---------- */
 function writingBack(hz,py,en){
   const card=$("#card");
-  const ex=EX[hz];
+  const ex=exampleFor(hz);
   const chars=[...hz].filter(c=>/\p{Script=Han}/u.test(c));
   const avail=Math.min(card.clientWidth-40,460);
   const size=Math.max(70,Math.min(150,Math.floor((avail-(chars.length-1)*8)/chars.length)));
@@ -4289,20 +4748,20 @@ function answer(r){
     sess[prev]--;st.seen--;if(prev==="s")st.correct--;
   }
   if(!prev){ /* count one review per card per pass (a back-button revision is the same review) */
-    const rc=rcount(lvl,mode);rc[hz]=(rc[hz]||0)+1;
+    const rc=rcount(mode);rc[hz]=(rc[hz]||0)+1;
   }
   given[idx]=r;
   st.seen++;if(r==="s")st.correct++;
-  const R=rmap(lvl,mode),wasSolid=R[hz]==="s",G=grad(lvl,mode),now=Date.now();
+  const R=rmap(mode),wasSolid=R[hz]==="s",G=grad(mode),now=Date.now();
   R[hz]=r;
-  rlast(lvl,mode)[hz]=now;
+  rlast(mode)[hz]=now;
   if(r==="s"){
     if(!wasSolid)G[hz]={t:now,s:0};                      /* just learned — schedule +1d and +3d */
     else if(gradDue(G[hz],now))G[hz].s++;                /* a scheduled review just happened */
     if(G[hz]&&!gradPending(G[hz]))delete G[hz];          /* graduated: back to normal weighting */
   }
   else delete G[hz];                                     /* dropped out of Solid — schedule resets */
-  if(reviewing==="x")markReviewed(lvl,mode,hz);
+  if(reviewing==="x")reviewDecksFor(hz).forEach(id=>markReviewed(id,mode,hz));
   sess[r]++;
   saveStore();
   idx++;

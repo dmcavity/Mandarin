@@ -2,8 +2,8 @@
    The page itself is NETWORK-FIRST: every launch checks for a new index.html,
    so GitHub updates appear on the next open. If offline, the cached copy is
    served instead. Static assets stay cache-first for speed. */
-const CACHE = "hsk-flashcards-v4";
-const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./strokes.json"];
+const CACHE = "hsk-flashcards-v5";
+const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./strokes.json", "./dict.json"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).catch(() => {}));
