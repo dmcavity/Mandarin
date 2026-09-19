@@ -95,6 +95,7 @@ body{
 .wrow .wm{flex:1;min-width:0}
 .wrow .wp{font-size:11.5px;color:var(--sand)}
 .wrow .we{font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wrow.tappable{cursor:pointer}
 .wrow .wsrc{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--sand);margin-top:2px}
 .wrow .wbtn{flex:0 0 auto;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;
   padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--ui-font)}
@@ -214,7 +215,7 @@ body{
 /* modal dialog — used where a native confirm() can't express a safe default */
 .modal-back{display:none;position:fixed;inset:0;background:rgba(38,35,30,.45);z-index:50;align-items:center;justify-content:center;padding:22px}
 .modal-back.on{display:flex}
-.modal{background:var(--card);border-radius:15px;padding:20px 18px 16px;max-width:340px;width:100%;box-shadow:0 12px 34px rgba(0,0,0,.22)}
+.modal{background:var(--card);border-radius:15px;padding:20px 18px 16px;max-width:340px;width:100%;box-shadow:0 12px 34px rgba(0,0,0,.22);max-height:88vh;overflow-y:auto}
 .modal-title{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:8px}
 .modal-body{font-size:13.5px;line-height:1.5;color:var(--ink);opacity:.85;margin-bottom:16px}
 .modal-btns{display:flex;flex-direction:column;gap:8px}
@@ -3234,8 +3235,16 @@ const ZI={1:"一",2:"二",3:"三",4:"四"};
 const VIDX={};V.forEach(v=>VIDX[v[0]]=v);
 function customWords(){store.cwords=store.cwords||{};return store.cwords;}
 function customEx(){store.cex=store.cex||{};return store.cex;}
-function wordEntry(hz){return VIDX[hz]||customWords()[hz]||null;}
-function exampleFor(hz){return EX[hz]||customEx()[hz]||null;}
+function wordEntry(hz){return customWords()[hz]||VIDX[hz]||null;}
+function exampleFor(hz){return customEx()[hz]||EX[hz]||null;}
+function isEdited(hz){return !!(VIDX[hz]&&customWords()[hz]);}
+/* Every word the app knows, with your edits applied. */
+function allWordEntries(){
+  const cw=customWords();
+  const out=V.map(v=>cw[v[0]]||v);
+  Object.keys(cw).forEach(hz=>{if(!VIDX[hz])out.push(cw[hz]);});
+  return out;
+}
 
 /* ---- decks: an HSK level, or a list the user built ---- */
 function userLists(){store.lists=store.lists||[];return store.lists;}
@@ -3259,7 +3268,10 @@ function capFor(deck){
   const c=SET.caps&&SET.caps[deck.id];
   return (typeof c==="number"&&c>0)?c:(deck.kind==="lv"?25:20);
 }
-function deckWords(lv){return V.filter(v=>v[3]===lv);}
+function deckWords(lv){
+  const cw=customWords();
+  return V.filter(v=>v[3]===lv).map(v=>cw[v[0]]||v);   /* your corrections apply everywhere */
+}
 function deckStarted(deck){
   return ["reading","writing"].some(md=>{
     const R=(store.ratings&&store.ratings[md])||{};
@@ -3633,7 +3645,7 @@ function wordRow(hz,opts){
   const e=wordEntry(hz)||(DICT&&DICT[hz]?[hz,DICT[hz][0],DICT[hz][1],0]:null);
   const esc=t=>String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const py=e?e[1]:"",en=e?e[2]:"";
-  return `<div class="wrow${opts.dim?" dim":""}" data-hz="${esc(hz)}">
+  return `<div class="wrow${opts.dim?" dim":""}${opts.tap?" tappable":""}" data-hz="${esc(hz)}"${opts.tap?' data-edit-word="'+esc(hz)+'"':""}>
     <span class="wh">${esc(hz)}</span>
     <span class="wm">
       <div class="wp">${esc(py)||"&nbsp;"}</div>
@@ -3650,8 +3662,14 @@ function renderList(){
   $("#list-title").textContent=L.name;
   const body=$("#list-body");
   const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  const rows=(L.words||[]).map(hz=>wordRow(hz,{act:"rm",btn:"✕",cls:"rm",
-      src:VIDX[hz]?("HSK "+VIDX[hz][3]):"added by you"})).join("");
+  const srcOf=hz=>{
+    const base=VIDX[hz]?("HSK "+VIDX[hz][3]):"added by you";
+    const bits=[base];
+    if(isEdited(hz))bits.push("edited");
+    if(exampleFor(hz))bits.push("has an example");
+    return bits.join(" · ");
+  };
+  const rows=(L.words||[]).map(hz=>wordRow(hz,{act:"rm",btn:"✕",cls:"rm",tap:true,src:srcOf(hz)})).join("");
   body.innerHTML=`
     <input class="list-name" id="list-rename" value="${esc(L.name)}">
     <div class="add-tools">
@@ -3668,8 +3686,14 @@ function renderList(){
     if(!L.words.length){showDialog("Nothing to study yet","Add some words to this list first.",[{label:"OK",value:1,kind:"safe"}]);return;}
     startSession(L.id,homeMode,null);
   };
-  body.querySelectorAll('[data-act="rm"]').forEach(b=>b.onclick=()=>{
+  body.querySelectorAll('[data-act="rm"]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
     L.words=L.words.filter(x=>x!==b.dataset.hz);saveStore();renderList();
+  });
+  body.querySelectorAll("[data-edit-word]").forEach(el=>el.onclick=async e=>{
+    if(e.target.closest('[data-act="rm"]'))return;
+    await loadDict();
+    if(await editWord(el.dataset.editWord))renderList();
   });
   $("#list-del").onclick=async()=>{
     const go=await showDialog(`Delete “${L.name}”?`,
@@ -3705,12 +3729,13 @@ function searchAll(q){
   if(han){
     const raw=q.trim();
     V.forEach(v=>{if(v[0].includes(raw))push(v[0],"HSK "+v[3]);});
-    Object.keys(customWords()).forEach(hz=>{if(hz.includes(raw))push(hz,"added by you");});
+    Object.keys(customWords()).forEach(hz=>{if(hz.includes(raw))push(hz,isEdited(hz)?("HSK "+VIDX[hz][3]):"added by you");});
     if(DICT)Object.keys(DICT).forEach(hz=>{if(hz.includes(raw))push(hz,"dictionary");});
     if(/^[一-鿿]+$/.test(raw))push(raw,"new word");
   }else{
-    V.forEach(v=>{
-      if(normalizeSearch(v[1]).includes(nq)||normalizeSearch(v[2]).includes(nq))push(v[0],"HSK "+v[3]);
+    allWordEntries().forEach(v=>{
+      if(normalizeSearch(v[1]).includes(nq)||normalizeSearch(v[2]).includes(nq))
+        push(v[0],VIDX[v[0]]?("HSK "+VIDX[v[0]][3]):"added by you");
     });
     if(DICTN)for(let i=0;i<DICTN.length&&out.length<80;i++){
       const [hz,py,en]=DICTN[i];
@@ -3726,12 +3751,15 @@ function renderAddResults(){
   if(!addHits.length){box.innerHTML="";return;}
   box.innerHTML=addHits.map(h=>{
     const known=!!wordEntry(h.hz)||!!(DICT&&DICT[h.hz]);
-    if(inList.has(h.hz))return wordRow(h.hz,{act:"none",btn:"✓ added",cls:"added",src:h.src,dim:true});
+    if(inList.has(h.hz))return wordRow(h.hz,{act:"edit",btn:"✎ edit",src:h.src,tap:true});
     if(!known)return wordRow(h.hz,{act:"fill",btn:"✎ details",cls:"need",src:"not in the dictionary"});
     return wordRow(h.hz,{act:"add",btn:"＋",src:h.src});
   }).join("");
   box.querySelectorAll('[data-act="add"]').forEach(b=>b.onclick=()=>addWordToList(b.dataset.hz));
-  box.querySelectorAll('[data-act="fill"]').forEach(b=>b.onclick=()=>fillWord(b.dataset.hz));
+  box.querySelectorAll('[data-act="fill"]').forEach(b=>b.onclick=()=>editWord(b.dataset.hz).then(ok=>{if(ok)addWordToList(b.dataset.hz,true);}));
+  box.querySelectorAll('[data-act="edit"]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();editWord(b.dataset.hz).then(ok=>{if(ok)renderAddResults();});
+  });
 }
 /* Auto-pinyin from the per-character readings — a usable first guess when a
    word is in neither the app nor the dictionary. */
@@ -3744,24 +3772,39 @@ function guessPinyin(hz){
   /* a partial guess is worse than none — it reads as a real answer */
   return parts.every(Boolean)?parts.join(""):"";
 }
-async function fillWord(hz){
+async function editWord(hz){
+  const built=VIDX[hz]||null;
+  const cur=customWords()[hz]||null;
   const d=DICT&&DICT[hz];
-  const cur=customWords()[hz];
-  const vals=await showForm("Add “"+hz+"”",[
-    {key:"py",label:"Pinyin",value:cur?cur[1]:(d?d[0]:guessPinyin(hz)),placeholder:"e.g. měiguó"},
-    {key:"en",label:"Meaning",value:cur?cur[2]:(d?d[1]:""),placeholder:"e.g. United States"},
-    {key:"ex",label:"Example sentence (optional)",value:(customEx()[hz]||[])[0]||"",placeholder:"optional"},
-    {key:"exen",label:"Example translation (optional)",value:(customEx()[hz]||[])[2]||"",placeholder:"optional"}
-  ]);
-  if(!vals)return false;
+  const base=cur||built||(d?[hz,d[0],d[1],0]:null);
+  const ex=exampleFor(hz)||["","",""];
+  const known=!!base;
+  const RESET="__reset";
+  const vals=await showForm((known?"Edit ":"Add ")+"\u201c"+hz+"\u201d",[
+    {key:"py",label:"Pinyin",value:base?base[1]:guessPinyin(hz),placeholder:"e.g. m\u011biguó"},
+    {key:"en",label:"Meaning",value:base?base[2]:"",placeholder:"e.g. United States"},
+    {key:"ex",label:"Example sentence",value:ex[0]||"",placeholder:"optional \u2014 paste one from your textbook"},
+    {key:"expy",label:"Example pinyin",value:ex[1]||"",placeholder:"optional"},
+    {key:"exen",label:"Example translation",value:ex[2]||"",placeholder:"optional"}
+  ],(built&&(cur||customEx()[hz]))?{extra:{label:"Use the app\u2019s version",value:RESET}}:null);
+  if(vals==null)return false;
+  if(vals===RESET){                      /* drop the override, fall back to the built-in word */
+    delete customWords()[hz];delete customEx()[hz];
+    saveStore();return true;
+  }
   const py=(vals.py||"").trim(),en=(vals.en||"").trim();
-  if(!en){await showDialog("A meaning is needed","Give the word an English meaning so the card has something to test you on.",[{label:"OK",value:1,kind:"safe"}]);return false;}
-  customWords()[hz]=[hz,py||guessPinyin(hz),en,0];
-  const ex=(vals.ex||"").trim();
-  if(ex)customEx()[hz]=[ex,"",(vals.exen||"").trim()];
+  if(!en){
+    await showDialog("A meaning is needed","Give the word an English meaning so the card has something to test you on.",[{label:"OK",value:1,kind:"safe"}]);
+    return false;
+  }
+  const lvl=built?built[3]:0;            /* an edited HSK word keeps its level, and its deck */
+  const changed=!built||py!==built[1]||en!==built[2];
+  if(changed)customWords()[hz]=[hz,py||guessPinyin(hz),en,lvl];
+  else delete customWords()[hz];
+  const sent=(vals.ex||"").trim();
+  if(sent)customEx()[hz]=[sent,(vals.expy||"").trim(),(vals.exen||"").trim()];
   else delete customEx()[hz];
   saveStore();
-  addWordToList(hz,true);
   return true;
 }
 function addWordToList(hz,silent){
@@ -3770,7 +3813,7 @@ function addWordToList(hz,silent){
   if(!wordEntry(hz)){
     const d=DICT&&DICT[hz];
     if(d)customWords()[hz]=[hz,d[0],d[1],0];
-    else{fillWord(hz);return;}
+    else{editWord(hz).then(ok=>{if(ok)addWordToList(hz,true);});return;}
   }
   if(L.words.indexOf(hz)<0)L.words.push(hz);
   saveStore();
@@ -3865,7 +3908,7 @@ function showPrompt(title,body,initial,placeholder,opts){
 }
 
 /* A multi-field version of showPrompt, for the details a new word needs. */
-function showForm(title,fields){
+function showForm(title,fields,opts){
   return new Promise(resolve=>{
     const back=$("#modal-back"),bodyEl=$("#modal-body");
     $("#modal-title").textContent=title;
@@ -3884,6 +3927,7 @@ function showForm(title,fields){
     const vals=()=>{const o={};Object.keys(inputs).forEach(k=>o[k]=inputs[k].value);return o;};
     const mk=(label,cls,fn)=>{const b=document.createElement("button");b.textContent=label;b.className=cls;b.onclick=fn;box.appendChild(b);};
     mk("Save","safe",()=>close(vals()));
+    if(opts&&opts.extra)mk(opts.extra.label,"danger",()=>close(opts.extra.value));
     mk("Cancel","plain",()=>close(null));
     const onKey=e=>{if(e.key==="Escape"){e.preventDefault();close(null);}};
     document.addEventListener("keydown",onKey);
@@ -4079,7 +4123,7 @@ function runSearch(q){
   const box=$("#search-results");
   const nq=normalizeSearch(q);
   if(!nq){box.style.display="none";box.innerHTML="";return;}
-  const pool=V.concat(Object.keys(customWords()).map(hz=>customWords()[hz]));
+  const pool=allWordEntries();
   const matches=pool.filter(v=>normalizeSearch(v[2]).includes(nq)||normalizeSearch(v[1]).includes(nq)).slice(0,25);
   box.innerHTML=matches.length?matches.map(v=>`
       <button class="search-hit" data-hz="${v[0]}" data-lv="${v[3]}">
@@ -4253,7 +4297,7 @@ function bindAudio(card){
 /* Other HSK words that share a character, nearest level first, shortest first
    — so the suggestions are words worth knowing rather than obscure compounds. */
 function relatedWords(ch,exclude,lv){
-  return V.concat(Object.keys(customWords()).map(hz=>customWords()[hz]))
+  return allWordEntries()
           .filter(v=>v[0]!==exclude&&v[0].includes(ch))
           .sort((a,b)=>(Math.abs(a[3]-lv)-Math.abs(b[3]-lv))||(a[0].length-b[0].length)||(a[3]-b[3]))
           .slice(0,6);
@@ -4314,7 +4358,7 @@ function readingBack(hz,py,en){
     ${ex?`<button class="ex-btn" id="ex-btn">例 Show example</button>
     <div class="example" id="ex" style="display:none">
       <div class="ex-hanzi" title="Tap to hear">${ex[0]} 🔊</div>
-      <div class="ex-pinyin">${ex[1]}</div>
+      ${ex[1]?`<div class="ex-pinyin">${ex[1]}</div>`:""}
       <div class="ex-english">${ex[2]}</div>
     </div>`:""}
     <button class="ex-btn" id="zi-btn">字 Character breakdown</button>
@@ -4363,7 +4407,7 @@ function writingBack(hz,py,en){
     ${ex?`<button class="ex-btn" id="ex-btn">例 Show example</button>
     <div class="example" id="ex" style="display:none">
       <div class="ex-hanzi" title="Tap to hear">${ex[0]} 🔊</div>
-      <div class="ex-pinyin">${ex[1]}</div>
+      ${ex[1]?`<div class="ex-pinyin">${ex[1]}</div>`:""}
       <div class="ex-english">${ex[2]}</div>
     </div>`:""}
     <button class="ex-btn" id="zi-btn">字 Character breakdown</button>
