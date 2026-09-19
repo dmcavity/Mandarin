@@ -324,10 +324,6 @@ body{
     <input type="text" id="search-input" placeholder="🔍 Search a word (English or pinyin)…" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div id="search-results"></div>
   </div>
-  <div class="toggle-row">
-    <span>Shuffle cards</span>
-    <button class="switch on" id="shuffle-toggle" aria-label="Toggle shuffle"></button>
-  </div>
   <div id="levels"></div>
   <input type="file" id="restore-file" accept="application/json,.json" style="display:none">
   <p class="notice">Tip: tap any pinyin to hear the pronunciation.</p>
@@ -3330,7 +3326,6 @@ function toggleDeck(id){
 
 const ALL_LEVELS=[1,2,3,4];
 function renderHome(){
-  $("#shuffle-toggle").classList.toggle("on",shuffleOn);
   document.querySelectorAll("#mode-seg button").forEach(b=>b.classList.toggle("on",b.dataset.md===homeMode));
   const wrap=$("#levels");wrap.innerHTML="";
   const open=new Set(SET.open||[]);
@@ -3468,7 +3463,6 @@ document.querySelectorAll("#mode-seg button").forEach(b=>b.onclick=()=>{
   persist.set("hsk-mode",homeMode);saveSettings();
   renderHome();
 });
-$("#shuffle-toggle").onclick=()=>{shuffleOn=!shuffleOn;$("#shuffle-toggle").classList.toggle("on",shuffleOn);saveShuffle();};
 /* A modal that, unlike confirm(), lets the SAFE choice be the default: it is
    listed first, styled as the dominant button, focused on open, and bound to
    both Enter and Escape. Destructive options are quiet outline buttons that
@@ -3842,7 +3836,7 @@ $("#add-input").oninput=e=>{
 /* ============ SETTINGS SCREEN ============ */
 /* A text-entry variant of showDialog, for exact values that a stepper or a
    preset list can't express. Resolves to the string, or null if cancelled. */
-function showPrompt(title,body,initial,placeholder){
+function showPrompt(title,body,initial,placeholder,opts){
   return new Promise(resolve=>{
     const back=$("#modal-back"),bodyEl=$("#modal-body");
     $("#modal-title").textContent=title;
@@ -3850,7 +3844,9 @@ function showPrompt(title,body,initial,placeholder){
     if(body){const p=document.createElement("div");p.textContent=body;p.style.marginBottom="12px";bodyEl.appendChild(p);}
     const inp=document.createElement("input");
     inp.type="text";inp.className="modal-input";inp.value=initial==null?"":String(initial);
-    inp.placeholder=placeholder||"";inp.setAttribute("inputmode","numeric");
+    inp.placeholder=placeholder||"";
+    if(opts&&opts.numeric)inp.setAttribute("inputmode","numeric");
+    inp.setAttribute("autocapitalize",(opts&&opts.numeric)?"off":"sentences");
     bodyEl.appendChild(inp);
     const box=$("#modal-btns");box.innerHTML="";
     const close=v=>{back.classList.remove("on");document.removeEventListener("keydown",onKey);resolve(v);};
@@ -4048,7 +4044,7 @@ function renderSettings(){
       el.querySelector('[data-act="inc"]').onclick=()=>bump(1);
       num.style.cursor="pointer";
       num.onclick=async()=>{     /* tap the number for an exact value */
-        const txt=await showPrompt(r.t,`Enter a number between ${r.min} and ${r.max}.`,r.get(),"");
+        const txt=await showPrompt(r.t,`Enter a number between ${r.min} and ${r.max}.`,r.get(),"",{numeric:true});
         if(txt==null)return;
         const n=parseInt(String(txt).replace(/[^0-9]/g,""),10);
         if(!isNaN(n))r.set(Math.max(r.min,Math.min(r.max,n)));
