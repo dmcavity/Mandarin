@@ -115,6 +115,10 @@ body{
   color:var(--ink);font-size:15px;font-weight:700;font-family:var(--ui-font);margin-bottom:10px}
 .modal-area{width:100%;min-height:150px;padding:10px 11px;border-radius:9px;border:1px solid var(--line);
   background:var(--paper);color:var(--ink);font-size:13px;font-family:var(--ui-font);margin-bottom:14px;resize:vertical}
+.form-tools{margin:2px 0 12px}
+.form-tool{width:100%;padding:9px 0;border-radius:9px;border:1px dashed var(--line);background:var(--paper);
+  color:var(--sand);font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--ui-font)}
+.form-tool:disabled{opacity:.7;cursor:default}
 .form-lab{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--sand);font-weight:700;margin:2px 0 4px}
 /* ---- home: today card, sections, collapsed deck rows ---- */
 .today{margin-top:14px;border:1px solid var(--cinnabar-soft);border-radius:14px;background:var(--card);padding:14px 15px}
@@ -139,8 +143,6 @@ body{
 .rowdeck .minibar i{display:block;height:100%;background:var(--jade);border-radius:2px;transition:width .3s}
 .rowdeck .rt{flex:0 0 auto;display:flex;align-items:center;gap:8px}
 .rowdeck.fresh{opacity:.72}
-.due-badge{background:#F7EDD8;border:1px solid #E4CFA1;color:#8F6A1C;border-radius:8px;padding:4px 8px;
-  font-size:11.5px;font-weight:700;white-space:nowrap;cursor:pointer;font-family:var(--ui-font)}
 .chev{color:var(--sand);font-size:17px;line-height:1}
 .showall{display:block;margin:2px auto 0;background:none;border:none;color:var(--sand);font-size:12px;
   text-decoration:underline;cursor:pointer;padding:6px;font-family:var(--ui-font)}
@@ -2869,6 +2871,7 @@ const DEFAULTS={
   autoSpeak:false,              // speak the word automatically when a reading card is flipped
   showStats:true,               // the "3 reviews · 5d ago" badge on the card front
   maxCards:0,                   // 0 = no limit on cards per session
+  onlineLookup:true,            // allow the optional translation lookup when adding a word
   open:[],                      // decks currently expanded on the home screen
   showAll:false                 // reveal levels not yet started
 };
@@ -2894,6 +2897,7 @@ function applySettings(o){
     : d.gradDays.slice();
   SET.autoSpeak=typeof o.autoSpeak==="boolean"?o.autoSpeak:d.autoSpeak;
   SET.showStats=typeof o.showStats==="boolean"?o.showStats:d.showStats;
+  SET.onlineLookup=typeof o.onlineLookup==="boolean"?o.onlineLookup:d.onlineLookup;
   SET.maxCards=(typeof o.maxCards==="number"&&o.maxCards>=0&&o.maxCards<=1000)?Math.round(o.maxCards):d.maxCards;
   SET.open=Array.isArray(o.open)?o.open.filter(x=>typeof x==="number"||typeof x==="string"):[];
   SET.showAll=typeof o.showAll==="boolean"?o.showAll:d.showAll;
@@ -3390,7 +3394,7 @@ function renderHome(){
           <div class="sub">${D.words.length} word${D.words.length===1?"":"s"} · ${D.pct}% solid</div>
           <div class="minibar"><i style="width:${D.pct}%"></i></div>
         </div>
-        <div class="rt">${D.review?`<span class="due-badge" data-rev="${esc(dk.id)}">↻ ${D.review} due</span>`:""}<span class="chev">›</span></div>`;
+        <div class="rt"><span class="chev">›</span></div>`;
       wrap.appendChild(row);
       return;
     }
@@ -3466,11 +3470,8 @@ function renderHome(){
   if(go)go.onclick=startTodayReview;
   nb.onclick=()=>newList();
   wrap.querySelectorAll("[data-open]").forEach(el=>el.onclick=e=>{
-    if(e.target.closest("[data-rev]")||e.target.closest("[data-edit]"))return;
+    if(e.target.closest("[data-edit]"))return;
     toggleDeck(el.dataset.open);
-  });
-  wrap.querySelectorAll("[data-rev]").forEach(b=>b.onclick=e=>{
-    e.stopPropagation();startSession(b.dataset.rev,homeMode,"x");
   });
   wrap.querySelectorAll(".all-btn").forEach(b=>b.onclick=()=>startSession(b.dataset.deck,homeMode,null));
   wrap.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
@@ -3702,6 +3703,8 @@ function renderListRows(){
   const R=rmap(homeMode);
   const label={s:"Solid",t:"Tentative",n:"Not learned"};
   const srcOf=hz=>{
+    const e=wordEntry(hz);
+    if(e&&!e[2])return "needs a meaning — tap to fill it in";
     const bits=[VIDX[hz]?("HSK "+VIDX[hz][3]):"added by you"];
     if(isEdited(hz))bits.push("edited");
     if(exampleFor(hz))bits.push("example");
@@ -3821,19 +3824,124 @@ function renderAddResults(){
   const L=listById(curList);
   const inList=new Set((L&&L.words)||[]);
   const box=$("#add-results");
-  if(!addHits.length){box.innerHTML="";return;}
+  const q=($("#add-input")||{}).value||"";
+  if(!addHits.length){
+    box.innerHTML=q.trim()
+      ? `<div class="set-note" style="margin:14px 3px">Nothing matched “${String(q).replace(/[<>&]/g,"")}”.</div>
+         <button class="review-btn" style="border-style:solid" id="make-word">＋ Create this word yourself</button>`
+      : "";
+    const mk=$("#make-word");
+    if(mk)mk.onclick=()=>createWordFromQuery(q);
+    return;
+  }
   box.innerHTML=addHits.map(h=>{
     const known=!!wordEntry(h.hz)||!!(DICT&&DICT[h.hz]);
-    if(inList.has(h.hz))return wordRow(h.hz,{act:"edit",btn:"✎ edit",src:h.src,tap:true});
-    if(!known)return wordRow(h.hz,{act:"fill",btn:"✎ details",cls:"need",src:"not in the dictionary"});
-    return wordRow(h.hz,{act:"add",btn:"＋",src:h.src});
+    const e=wordEntry(h.hz);
+    const needs=e&&!e[2];
+    const src=needs?"needs a meaning — tap to fill it in":h.src;
+    if(inList.has(h.hz))return wordRow(h.hz,{act:"rm",btn:"✕",cls:"rm",src:src,tap:true});
+    if(!known)return wordRow(h.hz,{act:"add",btn:"＋",cls:"need",src:"not in the dictionary",tap:true});
+    return wordRow(h.hz,{act:"add",btn:"＋",src:src,tap:true});
   }).join("");
-  box.querySelectorAll('[data-act="add"]').forEach(b=>b.onclick=()=>addWordToList(b.dataset.hz));
-  box.querySelectorAll('[data-act="fill"]').forEach(b=>b.onclick=()=>editWord(b.dataset.hz).then(ok=>{if(ok)addWordToList(b.dataset.hz,true);}));
-  box.querySelectorAll('[data-act="edit"]').forEach(b=>b.onclick=e=>{
-    e.stopPropagation();editWord(b.dataset.hz).then(ok=>{if(ok)renderAddResults();});
+  box.querySelectorAll('[data-act="add"]').forEach(b=>b.onclick=e=>{e.stopPropagation();addWordToList(b.dataset.hz);});
+  box.querySelectorAll('[data-act="rm"]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const L2=listById(curList);
+    if(L2){L2.words=L2.words.filter(x=>x!==b.dataset.hz);saveStore();renderAddResults();}
+  });
+  box.querySelectorAll("[data-edit-word]").forEach(el=>el.onclick=e=>{
+    if(e.target.closest(".wbtn"))return;
+    editWord(el.dataset.editWord).then(ok=>{if(ok)renderAddResults();});
   });
 }
+/* Is this pinyin or English? The syllable inventory comes from the characters
+   the app already knows, and the text has to split cleanly into those
+   syllables. "keting" and "haochi" do; "bedroom" and "landlord" do not.
+   A few English words (can, men) are also real syllables — those default to
+   pinyin, and the form lets you move the text across. */
+let PY_SYL=null;
+function pySyllables(){
+  if(PY_SYL)return PY_SYL;
+  PY_SYL=new Set();
+  Object.keys(CH).forEach(c=>{
+    const p=normalizeSearch(CH[c][0]).replace(/[^a-z]/g,"");
+    if(p)PY_SYL.add(p);
+  });
+  return PY_SYL;
+}
+function looksLikePinyin(str){
+  const t=normalizeSearch(str).replace(/[^a-z]/g,"");
+  if(!t||t.length>24)return false;
+  const S=pySyllables(),memo={};
+  const can=i=>{
+    if(i===t.length)return true;
+    if(memo[i]!==undefined)return memo[i];
+    for(let L=Math.min(6,t.length-i);L>=1;L--)
+      if(S.has(t.slice(i,i+L))&&can(i+L))return (memo[i]=true);
+    return (memo[i]=false);
+  };
+  return can(0);
+}
+/* Optional online lookup. It is explicit, times out, and any failure just
+   leaves the field alone — the app has to keep working offline. */
+async function lookupMeaning(hz){
+  if(!SET.onlineLookup)return null;
+  const url="https://api.mymemory.translated.net/get?q="+encodeURIComponent(hz)+"&langpair=zh-CN|en";
+  let timer=null;
+  try{
+    const ctrl=typeof AbortController!=="undefined"?new AbortController():null;
+    if(ctrl)timer=setTimeout(()=>ctrl.abort(),9000);
+    const r=await fetch(url,ctrl?{signal:ctrl.signal}:undefined);
+    if(timer)clearTimeout(timer);
+    if(!r.ok)return null;
+    const j=await r.json();
+    let t=j&&j.responseData&&j.responseData.translatedText;
+    if(!t)return null;
+    t=String(t).trim();
+    if(!t||t===hz)return null;
+    return t.length>46?t.slice(0,46).replace(/\s\S*$/,""):t;
+  }catch(e){if(timer)clearTimeout(timer);return null;}
+}
+function lookupTool(getHz){
+  return{label:"🌐 Look up the meaning online",run:async(inputs,status)=>{
+    const hz=(getHz(inputs)||"").trim();
+    if(!hz){status("Enter the characters first");return;}
+    status("Looking up…");
+    const t=await lookupMeaning(hz);
+    if(t){inputs.en.value=t;status("Filled in — check it");}
+    else status("No result (offline?)");
+  }};
+}
+/* Build a brand-new word from whatever the user typed. */
+async function createWordFromQuery(q){
+  await loadDict();
+  const raw=String(q||"").trim();
+  const isHan=/[\u4e00-\u9fff]/.test(raw);
+  const pin=!isHan&&raw&&looksLikePinyin(raw);
+  const vals=await showForm("Create a word",[
+    {key:"hz",label:"Characters (required)",value:isHan?raw:"",placeholder:"e.g. 客厅"},
+    {key:"py",label:"Pinyin",value:pin?raw:"",placeholder:"e.g. kètīng"},
+    {key:"en",label:"Meaning",value:(!isHan&&!pin)?raw:"",placeholder:"e.g. living room"},
+    {key:"ex",label:"Example sentence",value:"",placeholder:"optional"},
+    {key:"expy",label:"Example pinyin",value:"",placeholder:"optional"},
+    {key:"exen",label:"Example translation",value:"",placeholder:"optional"}
+  ],{tools:[lookupTool(i=>i.hz.value)]});
+  if(!vals)return;
+  const hz=(vals.hz||"").trim();
+  if(!/[\u4e00-\u9fff]/.test(hz)){
+    await showDialog("Characters are needed","A card needs the Chinese characters for the word. Pinyin and a meaning on their own can’t make one.",[{label:"OK",value:1,kind:"safe"}]);
+    return;
+  }
+  customWords()[hz]=[hz,(vals.py||"").trim()||guessPinyin(hz),(vals.en||"").trim(),0];
+  const sent=(vals.ex||"").trim();
+  if(sent)customEx()[hz]=[sent,(vals.expy||"").trim(),(vals.exen||"").trim()];
+  saveStore();
+  addWordToList(hz,true);
+  const inp=$("#add-input");
+  if(inp){inp.value=hz;addHits=searchAll(hz);}
+  renderAddResults();
+}
+
 /* Auto-pinyin from the per-character readings — a usable first guess when a
    word is in neither the app nor the dictionary. */
 function guessPinyin(hz){
@@ -3859,18 +3967,15 @@ async function editWord(hz){
     {key:"ex",label:"Example sentence",value:ex[0]||"",placeholder:"optional \u2014 paste one from your textbook"},
     {key:"expy",label:"Example pinyin",value:ex[1]||"",placeholder:"optional"},
     {key:"exen",label:"Example translation",value:ex[2]||"",placeholder:"optional"}
-  ],(built&&(cur||customEx()[hz]))?{extra:{label:"Use the app\u2019s version",value:RESET}}:null);
+  ],Object.assign({tools:[lookupTool(()=>hz)]},
+                  (built&&(cur||customEx()[hz]))?{extra:{label:"Use the app\u2019s version",value:RESET}}:{}));
   if(vals==null)return false;
   if(vals===RESET){                      /* drop the override, fall back to the built-in word */
     delete customWords()[hz];delete customEx()[hz];
     saveStore();return true;
   }
   const py=(vals.py||"").trim(),en=(vals.en||"").trim();
-  if(!en){
-    await showDialog("A meaning is needed","Give the word an English meaning so the card has something to test you on.",[{label:"OK",value:1,kind:"safe"}]);
-    return false;
-  }
-  const lvl=built?built[3]:0;            /* an edited HSK word keeps its level, and its deck */
+  const lvl=built?built[3]:0;   /* a meaning can be left blank and filled in later */            /* an edited HSK word keeps its level, and its deck */
   const changed=!built||py!==built[1]||en!==built[2];
   if(changed)customWords()[hz]=[hz,py||guessPinyin(hz),en,lvl];
   else delete customWords()[hz];
@@ -3899,8 +4004,8 @@ function addWordToList(hz,silent){
   if(!L)return;
   if(!wordEntry(hz)){
     const d=DICT&&DICT[hz];
-    if(d)customWords()[hz]=[hz,d[0],d[1],0];
-    else{editWord(hz).then(ok=>{if(ok)addWordToList(hz,true);});return;}
+    /* unknown word: add it now with whatever we can infer, details can follow */
+    customWords()[hz]=d?[hz,d[0],d[1],0]:[hz,guessPinyin(hz),"",0];
   }
   if(L.words.indexOf(hz)<0)L.words.push(hz);
   saveStore();
@@ -4009,6 +4114,20 @@ function showForm(title,fields,opts){
       inp.placeholder=f.placeholder||"";
       bodyEl.appendChild(inp);inputs[f.key]=inp;
     });
+    if(opts&&opts.tools&&opts.tools.length){
+      const tw=document.createElement("div");tw.className="form-tools";
+      opts.tools.forEach(t=>{
+        const tb=document.createElement("button");
+        tb.type="button";tb.className="form-tool";tb.textContent=t.label;
+        tb.onclick=async()=>{
+          const orig=t.label;tb.disabled=true;
+          try{await t.run(inputs,m=>{tb.textContent=m;});}catch(e){tb.textContent="Couldn’t look it up";}
+          setTimeout(()=>{tb.disabled=false;tb.textContent=orig;},1800);
+        };
+        tw.appendChild(tb);
+      });
+      bodyEl.appendChild(tw);
+    }
     const box=$("#modal-btns");box.innerHTML="";
     const close=v=>{back.classList.remove("on");document.removeEventListener("keydown",onKey);resolve(v);};
     const vals=()=>{const o={};Object.keys(inputs).forEach(k=>o[k]=inputs[k].value);return o;};
@@ -4110,11 +4229,13 @@ function settingsSpec(){
     ]},
     {title:"Pronunciation",rows:[{type:"custom",id:"voice-row",cls:"voice-row"}],
      note:"Speech uses the Chinese voices installed on this device; an app cannot add them."},
-    {title:"Word lists",note:"Lists collate words into your own decks — a textbook chapter, a topic, anything. Progress is shared with the word’s HSK deck.",
-     rows:userLists().map(L=>({
+    {title:"Word lists",extraRows:true,note:"Lists collate words into your own decks — a textbook chapter, a topic, anything. Progress is shared with the word’s HSK deck.",
+     rows:[{type:"toggle",t:"Look up meanings online",
+            s:"Adds a lookup button when you create a word. Needs a connection; everything else works offline.",
+            get:()=>SET.onlineLookup,set:v=>{SET.onlineLookup=v;saveSettings();}}].concat(userLists().map(L=>({
        type:"action",t:L.name,s:`${(L.words||[]).length} word${(L.words||[]).length===1?"":"s"}`,
        act:()=>openList(L.id)
-     })).concat([{type:"action",t:"＋ New list",s:"Name it and start adding words",act:()=>newList()}])},
+     }))).concat([{type:"action",t:"＋ New list",s:"Name it and start adding words",act:()=>newList()}])},
     {title:"Data",rows:[
       {type:"action",t:"Back up progress",s:"Save a dated file with every rating and review date",act:doBackup},
       {type:"action",t:"Restore from backup",s:"Replace current progress with a backup file",act:doRestore},
@@ -4344,7 +4465,7 @@ function renderCard(){
       <div class="prompt-label">What does this say?</div>
       <div class="big-hanzi ${hz.length>2?"long":""}">${hz}</div>`:`
       <div class="prompt-label">Recall the pinyin for…</div>
-      <div class="english">${en}</div>
+      <div class="english">${en||"<i style=\"color:var(--sand)\">no meaning yet — tap ✎ Edit this card</i>"}</div>
       <div class="hint">Say it out loud, then flip to write the character.</div>`;
   card.innerHTML=`
     <div class="corner">${ZI[cardLevel()]||"卡"}</div>
@@ -4441,7 +4562,7 @@ function readingBack(hz,py,en){
     <button class="flip-back" id="fb-btn">↺ Flip back</button>
     <div class="small-hanzi">${hz}</div>
     ${pinyinPill(hz,py)}
-    <div class="english">${en}</div>
+    <div class="english">${en||"<i style=\"color:var(--sand)\">no meaning yet — tap ✎ Edit this card</i>"}</div>
     ${ex?`<button class="ex-btn" id="ex-btn">例 Show example</button>
     <div class="example" id="ex" style="display:none">
       <div class="ex-hanzi" title="Tap to hear">${ex[0]} 🔊</div>
