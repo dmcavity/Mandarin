@@ -83,8 +83,16 @@ body{
 .seg button.on .zi{color:var(--cinnabar)}
 #back-btn,#next-btn{font-size:30px;line-height:.8;padding-bottom:4px}
 /* ---- lists ---- */
-.list-edit{margin-top:8px;width:100%;padding:8px 0;border-radius:9px;border:1px solid var(--line);
-  background:transparent;color:var(--sand);font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--ui-font)}
+.head-edit{flex:0 0 auto;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--paper);
+  color:var(--sand);font-size:14px;line-height:1;cursor:pointer;padding:0;font-family:var(--ui-font)}
+.head-edit:active{color:var(--ink)}
+.list-find{display:flex;gap:8px;margin-top:10px}
+.list-find input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink);font-size:14px;font-family:var(--ui-font)}
+.list-find input:focus{outline:none;border-color:var(--cinnabar-soft)}
+.list-find button{flex:0 0 auto;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer;
+  font-family:var(--ui-font);white-space:nowrap}
 .add-tools{display:flex;gap:8px;margin-top:10px}
 .add-tools button{flex:1;padding:9px 0;border-radius:9px;border:1px solid var(--line);background:var(--card);
   color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--ui-font)}
@@ -172,6 +180,7 @@ body{
 .zi-rel .rw .rg{color:var(--sand);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
 .zi-rel .rw .jump{border:none;background:none;color:var(--cinnabar);font-size:12px;cursor:pointer;padding:0 0 0 2px;line-height:1}
 .zi-none{font-size:11.5px;color:var(--sand);font-style:italic}
+.ex-btn.subtle{color:var(--sand);border-style:dashed}
 /* ===== settings screen (Android-style grouped list) ===== */
 .gear{margin-left:auto;background:none;border:none;font-size:22px;line-height:1;color:var(--sand);cursor:pointer;padding:6px}
 .gear:active{color:var(--ink)}
@@ -3394,6 +3403,7 @@ function renderHome(){
           <h2>${esc(dk.name)}</h2>
           <div class="count">${D.words.length} word${D.words.length===1?"":"s"}</div>
         </div>
+        ${dk.kind==="list"?`<button class="head-edit" data-edit="${esc(dk.id)}" title="Edit list" aria-label="Edit list">✎</button>`:""}
         <span class="chev">⌄</span>
       </div>
       <div class="bar"><i style="width:${D.pct}%"></i></div>
@@ -3411,7 +3421,7 @@ function renderHome(){
       </div>
       ${D.review?`<button class="review-btn" data-deck="${esc(dk.id)}">↻ ${D.review} word${D.review>1?"s":""} for review</button>`
         :D.revTotal?`<div class="review-done">✓ Review complete</div>`:""}
-      ${dk.kind==="list"?`<button class="list-edit" data-edit="${esc(dk.id)}">✎ Edit list</button>`:""}`;
+`;
     wrap.appendChild(el);
   };
 
@@ -3456,7 +3466,7 @@ function renderHome(){
   if(go)go.onclick=startTodayReview;
   nb.onclick=()=>newList();
   wrap.querySelectorAll("[data-open]").forEach(el=>el.onclick=e=>{
-    if(e.target.closest("[data-rev]"))return;
+    if(e.target.closest("[data-rev]")||e.target.closest("[data-edit]"))return;
     toggleDeck(el.dataset.open);
   });
   wrap.querySelectorAll("[data-rev]").forEach(b=>b.onclick=e=>{
@@ -3639,7 +3649,7 @@ async function newList(){
   userLists().push(L);saveStore();
   openList(L.id);
 }
-function openList(id){curList=id;renderList();show("scr-list");}
+function openList(id){curList=id;listQuery="";renderList();show("scr-list");}
 
 function wordRow(hz,opts){
   const e=wordEntry(hz)||(DICT&&DICT[hz]?[hz,DICT[hz][0],DICT[hz][1],0]:null);
@@ -3656,28 +3666,90 @@ function wordRow(hz,opts){
   </div>`;
 }
 
+let listQuery="",listSort="added";
+const LIST_SORTS=[
+  {v:"added",label:"Order added"},
+  {v:"pinyin",label:"Pinyin A–Z"},
+  {v:"hanzi",label:"Characters"},
+  {v:"weak",label:"Weakest first"},
+  {v:"reviewed",label:"Most reviewed"}
+];
+function sortedListWords(L){
+  const R=rmap(homeMode),RC=rcount(homeMode);
+  let ws=(L.words||[]).slice();
+  const q=normalizeSearch(listQuery),rawQ=listQuery.trim();
+  if(rawQ){
+    ws=ws.filter(hz=>{
+      if(rawQ&&hz.indexOf(rawQ)>=0)return true;
+      const e=wordEntry(hz);
+      if(!e)return false;
+      return normalizeSearch(e[1]).includes(q)||normalizeSearch(e[2]).includes(q);
+    });
+  }
+  const rank={n:0,t:1,s:2,undefined:-1};
+  const py=hz=>{const e=wordEntry(hz);return e?normalizeSearch(e[1]):"";};
+  if(listSort==="pinyin")ws.sort((a,b)=>py(a).localeCompare(py(b)));
+  else if(listSort==="hanzi")ws.sort((a,b)=>a.localeCompare(b,"zh"));
+  else if(listSort==="weak")ws.sort((a,b)=>(rank[R[a]]??-1)-(rank[R[b]]??-1)||py(a).localeCompare(py(b)));
+  else if(listSort==="reviewed")ws.sort((a,b)=>(RC[b]||0)-(RC[a]||0));
+  return ws;
+}
+function renderListRows(){
+  const L=listById(curList);
+  if(!L)return;
+  const box=$("#list-rows");
+  if(!box)return;
+  const R=rmap(homeMode);
+  const label={s:"Solid",t:"Tentative",n:"Not learned"};
+  const srcOf=hz=>{
+    const bits=[VIDX[hz]?("HSK "+VIDX[hz][3]):"added by you"];
+    if(isEdited(hz))bits.push("edited");
+    if(exampleFor(hz))bits.push("example");
+    if(R[hz])bits.push(label[R[hz]]);
+    return bits.join(" · ");
+  };
+  const ws=sortedListWords(L);
+  box.innerHTML=ws.length
+    ? ws.map(hz=>wordRow(hz,{act:"rm",btn:"✕",cls:"rm",tap:true,src:srcOf(hz)})).join("")
+    : `<div class="set-note" style="margin:16px 3px">${L.words.length?"No words match that search.":"No words yet — tap <b>Add words</b>."}</div>`;
+  box.querySelectorAll('[data-act="rm"]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    L.words=L.words.filter(x=>x!==b.dataset.hz);saveStore();renderListRows();updateListCount();
+  });
+  box.querySelectorAll("[data-edit-word]").forEach(el=>el.onclick=async e=>{
+    if(e.target.closest('[data-act="rm"]'))return;
+    await loadDict();
+    if(await editWord(el.dataset.editWord))renderListRows();
+  });
+}
+function updateListCount(){
+  const L=listById(curList);
+  const el=$("#list-count");
+  if(L&&el){
+    const shown=sortedListWords(L).length,total=(L.words||[]).length;
+    el.innerHTML=(shown===total?`${total} word${total===1?"":"s"}`:`${shown} of ${total} words`)+
+      ". Words already in the app keep their examples and share their progress with their HSK deck.";
+  }
+}
 function renderList(){
   const L=listById(curList);
   if(!L){show("scr-home");return;}
   $("#list-title").textContent=L.name;
   const body=$("#list-body");
   const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  const srcOf=hz=>{
-    const base=VIDX[hz]?("HSK "+VIDX[hz][3]):"added by you";
-    const bits=[base];
-    if(isEdited(hz))bits.push("edited");
-    if(exampleFor(hz))bits.push("has an example");
-    return bits.join(" · ");
-  };
-  const rows=(L.words||[]).map(hz=>wordRow(hz,{act:"rm",btn:"✕",cls:"rm",tap:true,src:srcOf(hz)})).join("");
+  const sortLabel=(LIST_SORTS.find(x=>x.v===listSort)||LIST_SORTS[0]).label;
   body.innerHTML=`
     <input class="list-name" id="list-rename" value="${esc(L.name)}">
     <div class="add-tools">
       <button id="list-add">＋ Add words</button>
       <button id="list-study" style="background:var(--cinnabar);border-color:var(--cinnabar);color:#fff">Study this list</button>
     </div>
-    <div class="set-note" style="margin:10px 3px">${L.words.length} word${L.words.length===1?"":"s"}. Words already in the app keep their examples and share their progress with their HSK deck.</div>
-    ${rows||`<div class="set-note" style="margin:16px 3px">No words yet — tap <b>Add words</b>.</div>`}
+    <div class="list-find">
+      <input type="text" id="list-search" placeholder="🔍 Find a word in this list…" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(listQuery)}">
+      <button id="list-sort">⇅ ${esc(sortLabel)}</button>
+    </div>
+    <div class="set-note" id="list-count" style="margin:10px 3px"></div>
+    <div id="list-rows"></div>
     <button class="reset" id="list-del">Delete this list</button>`;
   const rn=$("#list-rename");
   rn.onchange=()=>{const v=rn.value.trim();if(v){L.name=v;saveStore();$("#list-title").textContent=v;}else rn.value=L.name;};
@@ -3686,15 +3758,15 @@ function renderList(){
     if(!L.words.length){showDialog("Nothing to study yet","Add some words to this list first.",[{label:"OK",value:1,kind:"safe"}]);return;}
     startSession(L.id,homeMode,null);
   };
-  body.querySelectorAll('[data-act="rm"]').forEach(b=>b.onclick=e=>{
-    e.stopPropagation();
-    L.words=L.words.filter(x=>x!==b.dataset.hz);saveStore();renderList();
-  });
-  body.querySelectorAll("[data-edit-word]").forEach(el=>el.onclick=async e=>{
-    if(e.target.closest('[data-act="rm"]'))return;
-    await loadDict();
-    if(await editWord(el.dataset.editWord))renderList();
-  });
+  const si=$("#list-search");
+  si.oninput=e=>{listQuery=e.target.value;renderListRows();updateListCount();};
+  $("#list-sort").onclick=async()=>{
+    const pick=await showDialog("Sort this list","",
+      LIST_SORTS.map(o=>({label:(o.v===listSort?"● ":"")+o.label,value:o.v,kind:o.v===listSort?"safe":"plain"}))
+        .concat([{label:"Cancel",value:"__c",kind:"plain"}]));
+    if(pick==="__c"||pick===undefined)return;
+    listSort=pick;renderList();
+  };
   $("#list-del").onclick=async()=>{
     const go=await showDialog(`Delete “${L.name}”?`,
       "The list is removed. The words themselves stay in the app, and your ratings for them are untouched.",
@@ -3705,6 +3777,7 @@ function renderList(){
     SET.open=(SET.open||[]).filter(x=>x!==L.id);saveSettings();
     saveStore();renderHome();show("scr-home");
   };
+  renderListRows();updateListCount();
 }
 
 /* ---- adding words ---- */
@@ -3806,6 +3879,20 @@ async function editWord(hz){
   else delete customEx()[hz];
   saveStore();
   return true;
+}
+/* Edit the word on the card you are looking at, then rebuild the back face so
+   the change is visible straight away. */
+async function editCardWord(hz){
+  await loadDict();
+  const ok=await editWord(hz);
+  if(!ok)return;
+  const e=wordEntry(hz);
+  if(e&&deck[idx]&&deck[idx][0]===hz)deck[idx]=e;
+  /* rebuild both faces: in writing mode the meaning lives on the front */
+  const wasAnswered=answeredThisCard;
+  renderCard();
+  answeredThisCard=wasAnswered;
+  flipCard(true);
 }
 function addWordToList(hz,silent){
   const L=listById(curList);
@@ -4363,6 +4450,7 @@ function readingBack(hz,py,en){
     </div>`:""}
     <button class="ex-btn" id="zi-btn">字 Character breakdown</button>
     <div id="zi-wrap" style="display:none"></div>
+    <button class="ex-btn subtle" id="edit-card-btn">✎ Edit this card</button>
     <div class="answers">
       <button class="btn-missed" id="ans-n">✗ Not learned</button>
       <button class="btn-tent" id="ans-t">〜 Tentative</button>
@@ -4379,6 +4467,8 @@ function readingBack(hz,py,en){
   const exh=card.querySelector(".ex-hanzi");
   if(exh&&ex)exh.onclick=()=>speak(ex[0]);
   bindZi(card,hz,level);
+  const eb2=$("#edit-card-btn");
+  if(eb2)eb2.onclick=()=>editCardWord(hz);
   $("#ans-n").onclick=()=>answer("n");
   $("#ans-t").onclick=()=>answer("t");
   $("#ans-s").onclick=()=>answer("s");
@@ -4412,6 +4502,7 @@ function writingBack(hz,py,en){
     </div>`:""}
     <button class="ex-btn" id="zi-btn">字 Character breakdown</button>
     <div id="zi-wrap" style="display:none"></div>
+    <button class="ex-btn subtle" id="edit-card-btn">✎ Edit this card</button>
     <div class="answers" id="wr-answers" style="display:none">
       <button class="btn-missed" id="ans-n">✗ Not learned</button>
       <button class="btn-tent" id="ans-t">〜 Tentative</button>
@@ -4428,6 +4519,8 @@ function writingBack(hz,py,en){
   const exh=card.querySelector(".ex-hanzi");
   if(exh&&ex)exh.onclick=()=>speak(ex[0]);
   bindZi(card,hz,level);
+  const eb2=$("#edit-card-btn");
+  if(eb2)eb2.onclick=()=>editCardWord(hz);
   document.querySelectorAll("#squares canvas").forEach(cv=>setupCanvas(cv,size));
   $("#clear").onclick=()=>{
     canvases.forEach(c=>{c.strokes.length=0;c.ctx.clearRect(0,0,c.el.width,c.el.height);});
