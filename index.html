@@ -2860,14 +2860,15 @@ let homeMode="reading";                                    // mode toggle on the
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.6";
+const APP_VERSION="1.7";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
   voice:null,
   caps:{1:15,2:15,3:30,4:40},   // daily "words for review" per level
   pct:30,                       // ...further capped at this % of that level's Solid pile
-  gradDays:[1,3],               // scheduled reviews after a word first becomes Solid
+  maxGap:50,                    // never let a Solid word go longer than this without a review (0 = off)
+  gradDays:[1,3,6],             // scheduled reviews after a word first becomes Solid
   autoSpeak:false,              // speak the word automatically when a reading card is flipped
   showStats:true,               // the "3 reviews · 5d ago" badge on the card front
   maxCards:0,                   // 0 = no limit on cards per session
@@ -2892,6 +2893,7 @@ function applySettings(o){
     const v=o.caps[k];
     if(typeof v==="number"&&v>=1&&v<=200)SET.caps[k]=Math.round(v);
   });
+  SET.maxGap=(typeof o.maxGap==="number"&&o.maxGap>=0&&o.maxGap<=365)?Math.round(o.maxGap):d.maxGap;
   SET.gradDays=Array.isArray(o.gradDays)
     ? o.gradDays.filter(n=>typeof n==="number"&&n>0&&n<=365).map(n=>Math.round(n)).sort((a,b)=>a-b).slice(0,8)
     : d.gradDays.slice();
@@ -2908,7 +2910,8 @@ function applySettings(o){
 /* Review settings change what today's list should have been, so the cached
    daily sample is dropped and rebuilt the next time it is asked for. */
 function invalidateDaily(){if(store.daily){delete store.daily;saveStore();}}
-let sess={s:0,t:0,n:0},given=[];                           // given[i] = rating already recorded for deck[i]
+let sess={s:0,t:0,n:0},given=[],snap=[];                   // given[i] = rating already recorded for deck[i]
+                                                           // snap[i]  = that word's state before it was first answered
 let canvases=[],revealMode=null,drawLocked=false,eraseMode=false,answeredThisCard=false;
 
 function blankStats(){return{seen:0,correct:0}}
@@ -2931,20 +2934,56 @@ function rlast(md){
   store.lastrev.reading=store.lastrev.reading||{};store.lastrev.writing=store.lastrev.writing||{};
   return store.lastrev[md];
 }
+/* Consecutive Solid answers, including the scheduled reviews a newly-learned
+   word sits through. Reset to 0 the moment the word is rated anything else.
+   A long streak is evidence the word is holding, so it is reviewed less often. */
+function rstreak(md){
+  store.streak=store.streak||{reading:{},writing:{}};
+  store.streak.reading=store.streak.reading||{};store.streak.writing=store.streak.writing||{};
+  return store.streak[md];
+}
+/* Lifetime count of times a word FELL OUT of Solid. This, not the raw review
+   count, is what "a word I have trouble with" actually means: seeing a word
+   often because it keeps collapsing is different from seeing it often because
+   it has been around a while. */
+function rlapse(md){
+  store.lapses=store.lapses||{reading:{},writing:{}};
+  store.lapses.reading=store.lapses.reading||{};store.lapses.writing=store.lapses.writing||{};
+  return store.lapses[md];
+}
 function todayStr(){
   const d=new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
-/* "Words for review": a daily weighted random sample of up to 25 SOLID words.
-   Weights favor (a) words with many past reviews — percentile-scaled 0.1→1.0,
-   hitting 1.0 at the 90th percentile — and (b) stale words — 0.1 if reviewed
-   a day ago, 1.0 if 10+ days ago (never-timestamped words count as fully
-   stale). Combined weight = frequency × staleness, sampled without
-   replacement. The sample is cached per level+mode and rebuilt each day. */
-/* Newly-learned words get two scheduled reviews — 1 day and 3 days after they
-   were promoted to Solid — to catch them just as short-term memory fades and
-   push them into long-term memory. Once both are done the word "graduates"
-   and is picked by the usual frequency/staleness weighting instead. */
+/* "Words for review": a daily weighted random sample of SOLID words, drawn
+   without replacement (Efraimidis–Spirakis). Each word's weight is the product
+   of three terms:
+
+     difficulty × staleness × streak decay
+
+   DIFFICULTY is a Laplace-smoothed lapse rate, (lapses+1)/(reviews+2), ranked
+   into a percentile across the deck and scaled 0.1→1.0 (1.0 at the 90th
+   percentile). Smoothing is what makes a word with little history sit in the
+   middle rather than at the bottom: a word that has just graduated has 4
+   reviews and 0 lapses, so d = 1/6, which lands high — it has not yet proved
+   anything. As it survives review after review d falls (20 clean reviews →
+   d = 0.045, 40 → 0.024) and it sinks down the deck on its own. A word that
+   keeps collapsing climbs (20 reviews with 3 lapses → d = 0.18).
+
+   STALENESS is 0.1 one day after a review, 1.0 at ten days, and keeps climbing
+   to 2.8 beyond that, so a word that slips through the cracks gets steadily
+   more likely to be drawn rather than plateauing.
+
+   STREAK DECAY divides by (1 + 0.5 × streak), capped at a streak of 8, so five
+   correct answers in a row cut a word's odds to a third and eight to a fifth.
+
+   Nothing ever reaches zero weight — a word is deprioritized, never excluded.
+   The sample is cached per deck+mode and rebuilt each day. */
+/* Newly-learned words get scheduled reviews — by default 1, 3 and 6 days after
+   they were promoted to Solid — to catch them just as short-term memory fades
+   and push them into long-term memory. Those reviews build the word's streak.
+   Once the schedule is done the word "graduates" and is picked by the weighting
+   above instead. */
 function gradDays(){return (SET.gradDays&&SET.gradDays.length)?SET.gradDays:[];}
 function grad(md){
   store.grad=store.grad||{reading:{},writing:{}};
@@ -2966,7 +3005,7 @@ function reviewList(deck,md){
     return cached.w.filter(hz=>R[hz]==="s"&&!done.includes(hz));
   }
   if(!solid.length){delete store.daily[key];return [];}
-  const RC=rcount(md),RL=rlast(md),now=Date.now();
+  const RC=rcount(md),RL=rlast(md),ST=rstreak(md),LP=rlapse(md),now=Date.now();
   const G=grad(md);
   /* words with a scheduled review that has come due — always included, most
      overdue first; they are not left to chance */
@@ -2975,17 +3014,19 @@ function reviewList(deck,md){
      pool so an early random pick can't waste their slot */
   const pool=solid.filter(hz=>!gradPending(G[hz]));
   const n=pool.length;
-  const sorted=pool.map(hz=>RC[hz]||0).sort((a,b)=>a-b);
-  const freqW=hz=>{
+  /* days since this word was last answered; a word from before timestamps were
+     kept counts as 10 days — stale enough to weight, not old enough to force */
+  const dsince=hz=>{const t=RL[hz];return t?(now-t)/864e5:10;};
+  /* smoothed lapse rate, ranked across the pool */
+  const diff=hz=>((LP[hz]||0)+1)/((RC[hz]||0)+2);
+  const sorted=pool.map(diff).sort((a,b)=>a-b);
+  const rank=d=>{let lo=0,hi=sorted.length;while(lo<hi){const m=(lo+hi)>>1;if(sorted[m]<d)lo=m+1;else hi=m;}return lo;};
+  const diffW=hz=>{
     if(n<2)return 1;
-    const pct=sorted.indexOf(RC[hz]||0)/(n-1);
-    return 0.1+0.9*Math.min(1,pct/0.9);
+    return 0.1+0.9*Math.min(1,(rank(diff(hz))/(n-1))/0.9);
   };
-  const staleW=hz=>{
-    const t=RL[hz];
-    const days=t?(now-t)/864e5:10;
-    return 0.1+0.9*Math.max(0,Math.min(1,(days-1)/9));
-  };
+  const staleW=hz=>0.1+0.9*Math.max(0,Math.min(3,(dsince(hz)-1)/9));
+  const decayW=hz=>1/(1+0.5*Math.min(8,ST[hz]||0));
   /* Per-level daily cap, further limited to 30% of the solid pile — so a small
      solid set isn't cycled through every couple of days. At least 1 word is
      always offered whenever anything is solid. The cap governs the random
@@ -2993,11 +3034,24 @@ function reviewList(deck,md){
   const levelCap=capFor(deck);
   const cap=Math.max(1,Math.min(levelCap,Math.floor(solid.length*(SET.pct/100))));
   const slots=Math.max(0,cap-due.length);
+  /* Starvation floor: a lottery has a long tail, and without this a word can
+     sit untouched for months purely by chance. Anything past the limit is put
+     in by hand, oldest first — but never more than half the day's slots, so a
+     backlog drains over several days instead of swamping one session. */
+  const maxGap=SET.maxGap|0;
+  let forced=[];
+  if(maxGap>0&&slots>0){
+    forced=pool.filter(hz=>dsince(hz)>maxGap)
+               .sort((a,b)=>dsince(b)-dsince(a))
+               .slice(0,Math.max(1,Math.floor(slots/2)));
+  }
+  const fset=new Set(forced);
   /* weighted sampling without replacement (Efraimidis–Spirakis) */
-  const sample=pool.map(hz=>({hz,k:Math.pow(Math.random(),1/(freqW(hz)*staleW(hz)))}))
+  const sample=pool.filter(hz=>!fset.has(hz))
+                   .map(hz=>({hz,k:Math.pow(Math.random(),1/(diffW(hz)*staleW(hz)*decayW(hz)))}))
                    .sort((a,b)=>b.k-a.k)
-                   .slice(0,slots).map(o=>o.hz);
-  const pick=due.concat(sample);
+                   .slice(0,Math.max(0,slots-forced.length)).map(o=>o.hz);
+  const pick=due.concat(forced,sample);
   store.daily[key]={d:today,w:pick,done:[]};
   saveStore();
   return pick;
@@ -3340,7 +3394,7 @@ function startTodayReview(){
   level=0;deckName="All decks";mode=homeMode;reviewing="x";
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
-  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];
+  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
   show("scr-card");renderCard();renderReturnBar();
 }
 function toggleDeck(id){
@@ -3591,7 +3645,7 @@ function wipeProgress(deckId){
   if(!dk)return;
   if(store.stats)delete store.stats[dk.id];
   const hzs=dk.words.map(v=>v[0]);
-  ["ratings","reviews","lastrev","grad"].forEach(k=>{
+  ["ratings","reviews","lastrev","grad","streak","lapses"].forEach(k=>{
     if(!store[k])return;
     ["reading","writing"].forEach(md=>{const m=store[k][md];if(m)hzs.forEach(hz=>delete m[hz]);});
   });
@@ -4169,6 +4223,7 @@ function showArea(title,body,placeholder){
 const GRAD_PRESETS=[
   {v:[],label:"Off — no scheduled reviews"},
   {v:[1,3],label:"1, 3 days"},
+  {v:[1,3,6],label:"1, 3, 6 days"},
   {v:[1,3,7],label:"1, 3, 7 days"},
   {v:[1,3,6,10],label:"1, 3, 6, 10 days"},
   {v:[1,2,4,8,16],label:"1, 2, 4, 8, 16 days"}
@@ -4200,14 +4255,18 @@ function settingsSpec(){
       {type:"toggle",t:"Show review history on cards",s:"The “3 reviews · 5d ago” note on the front of each card",
        get:()=>SET.showStats,set:v=>{SET.showStats=v;saveSettings();}}
     ]},
-    {title:"Daily review",note:"“Words for review” draws from words you have rated Solid. Each level offers up to its own number of words per day, and never more than the share below.",
+    {title:"Daily review",note:"“Words for review” draws from words you have rated Solid, favouring the ones you have had to relearn and the ones you haven’t seen in a while, and passing over words you have got right many times running. Each deck offers up to its own number of words per day, capped by the share above.",
      rows:allDecks().map(dk=>({
       type:"stepper",t:dk.name,s:"Words offered per day",min:1,max:200,step:5,
       get:()=>capFor(dk),set:v=>{SET.caps[dk.id]=v;saveSettings();invalidateDaily();}
      })).concat([
       {type:"stepper",t:"Share of Solid words",s:"Upper limit as a percentage of that level’s Solid pile",
        min:5,max:100,step:5,suffix:"%",
-       get:()=>SET.pct,set:v=>{SET.pct=v;saveSettings();invalidateDaily();}}
+       get:()=>SET.pct,set:v=>{SET.pct=v;saveSettings();invalidateDaily();}},
+      {type:"choice",t:"Longest gap allowed",s:"A word left this long is put into the list by hand, rather than waiting on chance",
+       val:()=>SET.maxGap?SET.maxGap+" days":"No limit",
+       opts:[{v:0,label:"No limit"},{v:20,label:"20 days"},{v:30,label:"30 days"},{v:50,label:"50 days"},{v:75,label:"75 days"},{v:120,label:"120 days"}],
+       get:()=>SET.maxGap,set:v=>{SET.maxGap=v;saveSettings();invalidateDaily();}}
      ])},
     {title:"Newly learned words",note:"A word promoted to Solid is brought back on a fixed schedule before it joins the normal weighting, so it moves into long-term memory.",
      rows:[
@@ -4385,7 +4444,7 @@ function startSearchCard(hz,lv,remember){
   if(remember&&deck.length&&$("#scr-card").classList.contains("active")&&
      !(deck.length===1&&deck[0][0]===hz))navStack.push(snapshotSession());
   level=lv;deckName=VIDX[hz]?("HSK "+entry[3]):"Lookup";mode=remember?mode:homeMode;reviewing="q";
-  deck=[entry];idx=0;sess={s:0,t:0,n:0};given=[];
+  deck=[entry];idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
   show("scr-card");renderCard();renderReturnBar();
 }
 
@@ -4408,7 +4467,7 @@ function startSession(deckId,md,filter){
   if(!cards.length){alert("No cards in this group — nice work!");return;}
   if(shuffleOn)cards=[...cards].sort(()=>Math.random()-0.5);
   if(SET.maxCards&&filter!=="x"&&cards.length>SET.maxCards)cards=cards.slice(0,SET.maxCards);
-  deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];
+  deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
   show("scr-card");renderCard();
 }
 $("#exit-btn").onclick=()=>{navStack=[];renderReturnBar();renderHome();show("scr-home");};
@@ -5006,15 +5065,27 @@ function answer(r){
   }
   given[idx]=r;
   st.seen++;if(r==="s")st.correct++;
-  const R=rmap(mode),wasSolid=R[hz]==="s",G=grad(mode),now=Date.now();
+  const R=rmap(mode),G=grad(mode),ST=rstreak(mode),LP=rlapse(mode),now=Date.now();
+  /* Everything below is recomputed from the word's state BEFORE this card was
+     first answered, so going back and changing a judgment corrects the streak
+     and lapse counters instead of applying a second time. */
+  if(!snap[idx])snap[idx]={r:R[hz],st:ST[hz]||0,lp:LP[hz]||0,g:G[hz]?JSON.parse(JSON.stringify(G[hz])):null};
+  const was=snap[idx],wasSolid=was.r==="s";
+  ST[hz]=was.st;LP[hz]=was.lp;
+  if(was.g)G[hz]=JSON.parse(JSON.stringify(was.g));else delete G[hz];
   R[hz]=r;
   rlast(mode)[hz]=now;
   if(r==="s"){
-    if(!wasSolid)G[hz]={t:now,s:0};                      /* just learned — schedule +1d and +3d */
+    ST[hz]=(ST[hz]||0)+1;                                /* one more in a row */
+    if(!wasSolid)G[hz]={t:now,s:0};                      /* just learned — start the schedule */
     else if(gradDue(G[hz],now))G[hz].s++;                /* a scheduled review just happened */
     if(G[hz]&&!gradPending(G[hz]))delete G[hz];          /* graduated: back to normal weighting */
   }
-  else delete G[hz];                                     /* dropped out of Solid — schedule resets */
+  else{
+    if(wasSolid)LP[hz]=(LP[hz]||0)+1;                    /* it had been holding, and let go */
+    ST[hz]=0;                                            /* streak broken */
+    delete G[hz];                                        /* dropped out of Solid — schedule resets */
+  }
   if(reviewing==="x")reviewDecksFor(hz).forEach(id=>markReviewed(id,mode,hz));
   sess[r]++;
   saveStore();
