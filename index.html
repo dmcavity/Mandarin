@@ -83,8 +83,9 @@ body{
 .seg button.on .zi{color:var(--cinnabar)}
 #back-btn,#next-btn{font-size:30px;line-height:.8;padding-bottom:4px}
 /* ---- lists ---- */
-.head-edit{flex:0 0 auto;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--paper);
-  color:var(--sand);font-size:14px;line-height:1;cursor:pointer;padding:0;font-family:var(--ui-font)}
+.head-edit{flex:0 0 auto;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--paper);
+  color:var(--sand);font-size:13px;line-height:1;cursor:pointer;padding:0 10px;margin-right:16px;
+  display:inline-flex;align-items:center;gap:6px;font-family:var(--ui-font)}
 .head-edit:active{color:var(--ink)}
 .list-find{display:flex;gap:8px;margin-top:10px}
 .list-find input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
@@ -2868,6 +2869,7 @@ const DEFAULTS={
   voice:null,
   caps:{1:15,2:15,3:30,4:40},   // daily "words for review" per level
   pct:30,                       // ...further capped at this % of that level's Solid pile
+  listSort:"added",             // how the list editor was last ordered
   maxGap:50,                    // never let a Solid word go longer than this without a review (0 = off)
   gradDays:[1,3,6],             // scheduled reviews after a word first becomes Solid
   autoSpeak:false,              // speak the word automatically when a reading card is flipped
@@ -2898,6 +2900,7 @@ function applySettings(o){
   SET.gradDays=Array.isArray(o.gradDays)
     ? o.gradDays.filter(n=>typeof n==="number"&&n>0&&n<=365).map(n=>Math.round(n)).sort((a,b)=>a-b).slice(0,8)
     : d.gradDays.slice();
+  SET.listSort=LIST_SORTS.some(x=>x.v===o.listSort)?o.listSort:d.listSort;
   SET.autoSpeak=typeof o.autoSpeak==="boolean"?o.autoSpeak:d.autoSpeak;
   SET.showStats=typeof o.showStats==="boolean"?o.showStats:d.showStats;
   SET.onlineLookup=typeof o.onlineLookup==="boolean"?o.onlineLookup:d.onlineLookup;
@@ -3583,7 +3586,7 @@ function renderHome(){
           <h2>${esc(dk.name)}</h2>
           <div class="count">${D.words.length} word${D.words.length===1?"":"s"}</div>
         </div>
-        ${dk.kind==="list"?`<button class="head-edit" data-edit="${esc(dk.id)}" title="Edit list" aria-label="Edit list">✎</button>`:""}
+        ${dk.kind==="list"?`<button class="head-edit" data-edit="${esc(dk.id)}" title="Edit list" aria-label="Edit list">Edit<span aria-hidden="true">✎</span></button>`:""}
         <span class="chev">⌄</span>
       </div>
       <div class="bar"><i style="width:${D.pct}%"></i></div>
@@ -3827,7 +3830,12 @@ async function newList(){
   userLists().push(L);saveStore();
   openList(L.id);
 }
-function openList(id){curList=id;listQuery="";renderList();show("scr-list");}
+function openList(id){
+  curList=id;listQuery="";renderList();show("scr-list");
+  /* the home screen may have been scrolled well down; the list should open at
+     its top rather than part-way through whatever was on screen before */
+  try{window.scrollTo(0,0);}catch(e){}
+}
 
 function wordRow(hz,opts){
   const e=wordEntry(hz)||(DICT&&DICT[hz]?[hz,DICT[hz][0],DICT[hz][1],0]:null);
@@ -3844,7 +3852,7 @@ function wordRow(hz,opts){
   </div>`;
 }
 
-let listQuery="",listSort="added";
+let listQuery="";
 const LIST_SORTS=[
   {v:"added",label:"Order added"},
   {v:"pinyin",label:"Pinyin A–Z"},
@@ -3866,10 +3874,10 @@ function sortedListWords(L){
   }
   const rank={n:0,t:1,s:2,undefined:-1};
   const py=hz=>{const e=wordEntry(hz);return e?normalizeSearch(e[1]):"";};
-  if(listSort==="pinyin")ws.sort((a,b)=>py(a).localeCompare(py(b)));
-  else if(listSort==="hanzi")ws.sort((a,b)=>a.localeCompare(b,"zh"));
-  else if(listSort==="weak")ws.sort((a,b)=>(rank[R[a]]??-1)-(rank[R[b]]??-1)||py(a).localeCompare(py(b)));
-  else if(listSort==="reviewed")ws.sort((a,b)=>(RC[b]||0)-(RC[a]||0));
+  if(SET.listSort==="pinyin")ws.sort((a,b)=>py(a).localeCompare(py(b)));
+  else if(SET.listSort==="hanzi")ws.sort((a,b)=>a.localeCompare(b,"zh"));
+  else if(SET.listSort==="weak")ws.sort((a,b)=>(rank[R[a]]??-1)-(rank[R[b]]??-1)||py(a).localeCompare(py(b)));
+  else if(SET.listSort==="reviewed")ws.sort((a,b)=>(RC[b]||0)-(RC[a]||0));
   return ws;
 }
 function renderListRows(){
@@ -3917,7 +3925,7 @@ function renderList(){
   $("#list-title").textContent=L.name;
   const body=$("#list-body");
   const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  const sortLabel=(LIST_SORTS.find(x=>x.v===listSort)||LIST_SORTS[0]).label;
+  const sortLabel=(LIST_SORTS.find(x=>x.v===SET.listSort)||LIST_SORTS[0]).label;
   body.innerHTML=`
     <input class="list-name" id="list-rename" value="${esc(L.name)}">
     <div class="add-tools">
@@ -3942,10 +3950,10 @@ function renderList(){
   si.oninput=e=>{listQuery=e.target.value;renderListRows();updateListCount();};
   $("#list-sort").onclick=async()=>{
     const pick=await showDialog("Sort this list","",
-      LIST_SORTS.map(o=>({label:(o.v===listSort?"● ":"")+o.label,value:o.v,kind:o.v===listSort?"safe":"plain"}))
+      LIST_SORTS.map(o=>({label:(o.v===SET.listSort?"● ":"")+o.label,value:o.v,kind:o.v===SET.listSort?"safe":"plain"}))
         .concat([{label:"Cancel",value:"__c",kind:"plain"}]));
     if(pick==="__c"||pick===undefined)return;
-    listSort=pick;renderList();
+    SET.listSort=pick;saveSettings();renderList();
   };
   $("#list-del").onclick=async()=>{
     const go=await showDialog(`Delete “${L.name}”?`,
