@@ -184,7 +184,8 @@ body{
 .zi-none{font-size:11.5px;color:var(--sand);font-style:italic}
 .ex-btn.subtle{color:var(--sand);border-style:dashed}
 /* ===== settings screen (Android-style grouped list) ===== */
-.gear{margin-left:auto;background:none;border:none;font-size:22px;line-height:1;color:var(--sand);cursor:pointer;padding:6px}
+.gear{margin-left:auto;background:none;border:none;line-height:0;color:var(--sand);cursor:pointer;padding:6px;display:flex;align-items:center}
+.gear svg{display:block}
 .gear:active{color:var(--ink)}
 .set-head{display:flex;align-items:center;gap:10px;padding:12px 0 14px;border-bottom:1px solid var(--line)}
 .set-head button{background:none;border:none;font-size:26px;line-height:.8;color:var(--sand);cursor:pointer;padding:0 4px}
@@ -326,7 +327,7 @@ body{
       <h1>汉字卡</h1>
       <div class="sub">HSK Flashcard Drills</div>
     </div>
-    <button class="gear" id="gear-btn" aria-label="Settings" title="Settings">⚙</button>
+    <button class="gear" id="gear-btn" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M9.89 4.28L10.25 0.94L13.75 0.94L14.11 4.28A8 8 0 0 1 15.96 5.05L18.58 2.94L21.06 5.42L18.95 8.04A8 8 0 0 1 19.72 9.89L23.06 10.25L23.06 13.75L19.72 14.11A8 8 0 0 1 18.95 15.96L21.06 18.58L18.58 21.06L15.96 18.95A8 8 0 0 1 14.11 19.72L13.75 23.06L10.25 23.06L9.89 19.72A8 8 0 0 1 8.04 18.95L5.42 21.06L2.94 18.58L5.05 15.96A8 8 0 0 1 4.28 14.11L0.94 13.75L0.94 10.25L4.28 9.89A8 8 0 0 1 5.05 8.04L2.94 5.42L5.42 2.94L8.04 5.05A8 8 0 0 1 9.89 4.28ZM12 8.05A3.95 3.95 0 1 0 12 15.95A3.95 3.95 0 1 0 12 8.05Z"/></svg></button>
   </div>
   <div class="seg" id="mode-seg">
     <button data-md="reading" class="on"><span class="zi">认</span> Reading</button>
@@ -2860,7 +2861,7 @@ let homeMode="reading";                                    // mode toggle on the
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.7";
+const APP_VERSION="1.9";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -2942,14 +2943,77 @@ function rstreak(md){
   store.streak.reading=store.streak.reading||{};store.streak.writing=store.streak.writing||{};
   return store.streak[md];
 }
-/* Lifetime count of times a word FELL OUT of Solid. This, not the raw review
+/* Running total of the times a word FELL OUT of Solid. This, not the raw review
    count, is what "a word I have trouble with" actually means: seeing a word
    often because it keeps collapsing is different from seeing it often because
-   it has been around a while. */
+   it has been around a while.
+
+   Lapses are counted in FRACTIONS, not whole numbers, because not every lapse
+   says the same thing about the word. Losing a word four days after learning it
+   is evidence the word is hard. Losing one you knew well, after it sat untouched
+   for eighty days, mostly says the schedule let it slip — anyone would have
+   forgotten it. So each lapse is scored by whether the word failed inside the
+   range it had already proved it could hold (see lapseCredit). */
 function rlapse(md){
   store.lapses=store.lapses||{reading:{},writing:{}};
   store.lapses.reading=store.lapses.reading||{};store.lapses.writing=store.lapses.writing||{};
   return store.lapses[md];
+}
+/* The longest gap, in days, a word has ever been recalled correctly across —
+   what it has demonstrated it can hold. It grows with every successful recall,
+   and a lapse pulls it down to half the gap that just failed, but only when that
+   is lower than what the word had already proved. So failing at eighty days when
+   it had only ever held twenty-five leaves its record alone — nothing was
+   disproved — while failing at twenty when it had held forty cuts it hard. After
+   a lapse the word goes back through the graduation ladder, which rebuilds the
+   record honestly from short gaps up. */
+function rbest(md){
+  store.best=store.best||{reading:{},writing:{}};
+  store.best.reading=store.best.reading||{};store.best.writing=store.best.writing||{};
+  return store.best[md];
+}
+/* How hard the word was to learn in the first place, as a number from 1 (went
+   in first time) to 3 (a long fight). It is the PRIOR the weighting starts from
+   before there is any evidence of how well the word holds — and it is frozen the
+   moment the word first reaches Solid, so it stays a fact about learning it. */
+function rprior(md){
+  store.prior=store.prior||{reading:{},writing:{}};
+  store.prior.reading=store.prior.reading||{};store.prior.writing=store.prior.writing||{};
+  return store.prior[md];
+}
+/* Reviews the word has come through while ALREADY Solid — not reviews since it
+   first reached Solid, which would count the struggle to win it back after a
+   lapse as though that were evidence in its favour. Its absence also marks a
+   word that has never been Solid at all, which is what keeps the prior open. */
+function rsolid(md){
+  store.solidrev=store.solidrev||{reading:{},writing:{}};
+  store.solidrev.reading=store.solidrev.reading||{};store.solidrev.writing=store.solidrev.writing||{};
+  return store.solidrev[md];
+}
+/* The prior counts for less and less as the word proves itself: halved after
+   five Solid reviews, four fifths gone by twenty. What you had to do to learn a
+   word matters most before you know anything else about it. */
+const PRIOR_HALFLIFE=5;
+function priorNow(a,solidRev){return 1+((a||1)-1)/(1+(solidRev||0)/PRIOR_HALFLIFE);}
+/* A miss is worth a whole mark against the word if you drew a blank, half if you
+   half-knew it. */
+function missWeight(r){return r==="n"?1:0.5;}
+/* The gap, in days, the word was being asked to hold when this review happened:
+   for a word still on the graduation ladder it is the rung it was due at, and
+   for a graduated word there is no schedule, so it is whatever it last proved. */
+function askedOf(rec,best){
+  const g=gradDays();
+  let rung=0;
+  if(rec&&rec.s<g.length)rung=g[rec.s]-(rec.s>0?g[rec.s-1]:0);
+  return Math.max(1,best||0,rung);
+}
+/* How much of a lapse this failure is worth: a full one if the word failed
+   inside what was being asked of it, tapering to a quarter if it was left far
+   longer than that. Failing the 3-day review counts in full; losing a word you
+   knew well, eighty days after you last saw it, barely counts at all. */
+function lapseCredit(asked,gapDays){
+  if(!(gapDays>0))return 1;
+  return Math.max(0.25,Math.min(1,asked/gapDays));
 }
 function todayStr(){
   const d=new Date();
@@ -2961,14 +3025,25 @@ function todayStr(){
 
      difficulty × staleness × streak decay
 
-   DIFFICULTY is a Laplace-smoothed lapse rate, (lapses+1)/(reviews+2), ranked
-   into a percentile across the deck and scaled 0.1→1.0 (1.0 at the 90th
-   percentile). Smoothing is what makes a word with little history sit in the
-   middle rather than at the bottom: a word that has just graduated has 4
-   reviews and 0 lapses, so d = 1/6, which lands high — it has not yet proved
-   anything. As it survives review after review d falls (20 clean reviews →
-   d = 0.045, 40 → 0.024) and it sinks down the deck on its own. A word that
-   keeps collapsing climbs (20 reviews with 3 lapses → d = 0.18).
+   DIFFICULTY is a smoothed lapse rate, (lapses + prior) / (solidReviews +
+   prior + 1), ranked into a percentile across the deck and scaled 0.1→1.0 (1.0
+   at the 90th percentile).
+
+   Only reviews survived while ALREADY Solid go in the denominator. Reviews spent
+   learning a word, or winning it back after a lapse, are failures, not proof of
+   durability, and putting them there would have meant a word you fought to learn
+   looked easier than one that went in first time.
+
+   Lapses are fractional — a word lost long after it was due counts for less than
+   one lost while it should still have been fresh, so the schedule letting a word
+   slip is not mistaken for the word being hard. Rounds spent clawing a word back
+   from Tentative add to the same total at half weight each.
+
+   The PRIOR is where the word starts before any of that: 1 if it went in first
+   time, up to 3 if learning it was a fight. It fades as the word proves itself —
+   halved after five Solid reviews, four fifths gone by twenty — so how hard a
+   word was to learn matters most while nothing better is known, and real lapses
+   take over from there.
 
    STALENESS is 0.1 one day after a review, 1.0 at ten days, and keeps climbing
    to 2.8 beyond that, so a word that slips through the cracks gets steadily
@@ -3005,7 +3080,7 @@ function reviewList(deck,md){
     return cached.w.filter(hz=>R[hz]==="s"&&!done.includes(hz));
   }
   if(!solid.length){delete store.daily[key];return [];}
-  const RC=rcount(md),RL=rlast(md),ST=rstreak(md),LP=rlapse(md),now=Date.now();
+  const RL=rlast(md),ST=rstreak(md),LP=rlapse(md),PR=rprior(md),SR=rsolid(md),now=Date.now();
   const G=grad(md);
   /* words with a scheduled review that has come due — always included, most
      overdue first; they are not left to chance */
@@ -3017,8 +3092,9 @@ function reviewList(deck,md){
   /* days since this word was last answered; a word from before timestamps were
      kept counts as 10 days — stale enough to weight, not old enough to force */
   const dsince=hz=>{const t=RL[hz];return t?(now-t)/864e5:10;};
-  /* smoothed lapse rate, ranked across the pool */
-  const diff=hz=>((LP[hz]||0)+1)/((RC[hz]||0)+2);
+  /* Smoothed lapse rate: lapses against reviews survived while Solid, started
+     off from the learning prior rather than from a flat "assume nothing". */
+  const diff=hz=>{const a=priorNow(PR[hz],SR[hz]);return ((LP[hz]||0)+a)/((SR[hz]||0)+a+1);};
   const sorted=pool.map(diff).sort((a,b)=>a-b);
   const rank=d=>{let lo=0,hi=sorted.length;while(lo<hi){const m=(lo+hi)>>1;if(sorted[m]<d)lo=m+1;else hi=m;}return lo;};
   const diffW=hz=>{
@@ -3089,13 +3165,10 @@ const persist={
     try{if(typeof localStorage!=="undefined")localStorage.setItem(k,v);}catch(e){}
   }
 };
-async function loadStore(){
-  try{
-    const r=await persist.get("hsk-progress");
-    if(r){
-      const p=JSON.parse(r);
-      if(p&&p.stats){
-        store=p;
+/* Every data migration lives here so that loading a save and restoring a backup
+   go through exactly the same upgrade path. Each step is gated on its own flag
+   and is safe to run repeatedly. */
+function migrateStore(){
         store.ratings=store.ratings||{};
         if(!store.flat1){   /* ---- legacy shapes only: everything below predates the flat store ---- */
         if(store.missed){ /* migrate old missed lists */
@@ -3184,6 +3257,55 @@ async function loadStore(){
           store.flat1=1;
           saveStore();
         }
+
+  /* ---- 1.9: split the single lifetime review count into a learning "prior"
+     and a count of reviews survived while Solid.
+
+     Until now every review sat in one counter, which meant a word you fought to
+     learn looked, to the weighting, exactly like a word you had proved twenty
+     times over — and since the count sat in the denominator, the struggle
+     actually counted in its favour. Going forward the two are kept apart. The
+     history to make that split is gone for words already in the app, so their
+     existing count is read the way it reads to you: a word reviewed far more
+     than its neighbours was either learned recently or is genuinely harder.
+     That ranking is frozen as the word's prior, and its Solid count starts as
+     though it had just come off the graduation ladder. ---- */
+  if(!store.prior1){
+    store.prior=store.prior||{reading:{},writing:{}};
+    store.solidrev=store.solidrev||{reading:{},writing:{}};
+    ["reading","writing"].forEach(md=>{
+      const RC=(store.reviews&&store.reviews[md])||{};
+      const R=(store.ratings&&store.ratings[md])||{};
+      const counts=Object.keys(RC).map(hz=>RC[hz]||0).filter(n=>n>0).sort((a,b)=>a-b);
+      const PR=store.prior[md]=store.prior[md]||{};
+      const SR=store.solidrev[md]=store.solidrev[md]||{};
+      Object.keys(RC).forEach(hz=>{
+        const n=RC[hz]||0;
+        if(!n)return;
+        /* percentile of this word's review count across everything you have
+           studied, mapped onto a prior of 1 (easiest) to 3 (hardest) */
+        let lo=0,hi=counts.length;
+        while(lo<hi){const m=(lo+hi)>>1;if(counts[m]<n)lo=m+1;else hi=m;}
+        const pct=counts.length>1?lo/(counts.length-1):0.5;
+        PR[hz]=Math.round((1+2*pct)*100)/100;
+        /* only words that actually reached Solid get a Solid-review baseline;
+           anything still being learned keeps building its prior as before */
+        if(R[hz]==="s")SR[hz]=4;
+      });
+    });
+    delete store.daily;          /* today's lists rebuild against the new weighting */
+    store.prior1=1;
+  }
+  saveStore();
+}
+async function loadStore(){
+  try{
+    const r=await persist.get("hsk-progress");
+    if(r){
+      const p=JSON.parse(r);
+      if(p&&p.stats){
+        store=p;
+        migrateStore();
       }
     }
   }catch(e){/* first run or storage unavailable — start fresh */}
@@ -3601,6 +3723,7 @@ function applyRestore(payload){
   if(!prog||typeof prog!=="object"||(!prog.ratings&&!prog.stats))throw new Error("not a progress file");
   store=prog;
   store.stats=store.stats||{};store.ratings=store.ratings||{};
+  migrateStore();          /* a backup may predate any number of format changes */
   if(payload&&typeof payload.shuffle==="boolean"){shuffleOn=payload.shuffle;saveShuffle();}
   if(payload&&(payload.mode==="reading"||payload.mode==="writing")){homeMode=payload.mode;persist.set("hsk-mode",homeMode);}
   if(payload&&payload.settings){applySettings(payload.settings);saveSettings();renderVoicePicker();}
@@ -3645,7 +3768,7 @@ function wipeProgress(deckId){
   if(!dk)return;
   if(store.stats)delete store.stats[dk.id];
   const hzs=dk.words.map(v=>v[0]);
-  ["ratings","reviews","lastrev","grad","streak","lapses"].forEach(k=>{
+  ["ratings","reviews","lastrev","grad","streak","lapses","best","prior","solidrev"].forEach(k=>{
     if(!store[k])return;
     ["reading","writing"].forEach(md=>{const m=store[k][md];if(m)hzs.forEach(hz=>delete m[hz]);});
   });
@@ -5065,24 +5188,56 @@ function answer(r){
   }
   given[idx]=r;
   st.seen++;if(r==="s")st.correct++;
-  const R=rmap(mode),G=grad(mode),ST=rstreak(mode),LP=rlapse(mode),now=Date.now();
+  const R=rmap(mode),G=grad(mode),ST=rstreak(mode),LP=rlapse(mode),BS=rbest(mode),
+        RL=rlast(mode),PR=rprior(mode),SR=rsolid(mode),now=Date.now();
   /* Everything below is recomputed from the word's state BEFORE this card was
      first answered, so going back and changing a judgment corrects the streak
      and lapse counters instead of applying a second time. */
-  if(!snap[idx])snap[idx]={r:R[hz],st:ST[hz]||0,lp:LP[hz]||0,g:G[hz]?JSON.parse(JSON.stringify(G[hz])):null};
+  if(!snap[idx])snap[idx]={r:R[hz],st:ST[hz]||0,lp:LP[hz]||0,bs:BS[hz]||0,
+                           pr:PR[hz],sr:SR[hz],
+                           t:RL[hz],g:G[hz]?JSON.parse(JSON.stringify(G[hz])):null};
   const was=snap[idx],wasSolid=was.r==="s";
-  ST[hz]=was.st;LP[hz]=was.lp;
+  ST[hz]=was.st;LP[hz]=was.lp;BS[hz]=was.bs;
+  if(was.pr===undefined)delete PR[hz];else PR[hz]=was.pr;
+  if(was.sr===undefined)delete SR[hz];else SR[hz]=was.sr;
   if(was.g)G[hz]=JSON.parse(JSON.stringify(was.g));else delete G[hz];
+  /* a word that has never reached Solid has no Solid-review count yet, and that
+     is what keeps its learning prior open to further evidence */
+  const everSolid=SR[hz]!==undefined;
+  /* how long this word had been left before now — words from before timestamps
+     were kept count as 10 days, the same fallback the weighting uses */
+  const gap=was.t?(now-was.t)/864e5:10;
   R[hz]=r;
-  rlast(mode)[hz]=now;
+  RL[hz]=now;
   if(r==="s"){
     ST[hz]=(ST[hz]||0)+1;                                /* one more in a row */
+    /* only a real elapsed gap counts as proof — the 10-day stand-in above is a
+       guess, and guessed evidence has no business in the record */
+    if(was.t)BS[hz]=Math.round(Math.max(BS[hz]||0,gap)*100)/100;
+    if(!everSolid)SR[hz]=0;                              /* first time Solid: the prior is now settled */
+    else if(wasSolid)SR[hz]=(SR[hz]||0)+1;               /* one more review survived while Solid */
     if(!wasSolid)G[hz]={t:now,s:0};                      /* just learned — start the schedule */
     else if(gradDue(G[hz],now))G[hz].s++;                /* a scheduled review just happened */
     if(G[hz]&&!gradPending(G[hz]))delete G[hz];          /* graduated: back to normal weighting */
   }
   else{
-    if(wasSolid)LP[hz]=(LP[hz]||0)+1;                    /* it had been holding, and let go */
+    const mw=missWeight(r);
+    if(wasSolid){                                        /* it had been holding, and let go */
+      LP[hz]=Math.round(((LP[hz]||0)+lapseCredit(askedOf(was.g,BS[hz]),gap))*100)/100;
+      /* downgrade, never upgrade — and only on a real elapsed gap, for the same
+         reason the record is only built from one */
+      if(was.t)BS[hz]=Math.round(Math.min(BS[hz]||0,gap/2)*100)/100;
+    }
+    else if(!everSolid){
+      /* still learning it for the first time: this is what the prior is made of */
+      PR[hz]=Math.round(Math.min(3,(PR[hz]||1)+mw/6)*100)/100;
+    }
+    else{
+      /* clawing it back after a lapse. Every extra round here says the word is
+         less secure than the single lapse already recorded, and unlike the prior
+         this never fades — it is evidence about now, not about learning it. */
+      LP[hz]=Math.round(((LP[hz]||0)+mw*0.5)*100)/100;
+    }
     ST[hz]=0;                                            /* streak broken */
     delete G[hz];                                        /* dropped out of Solid — schedule resets */
   }
