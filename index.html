@@ -60,6 +60,11 @@ body{
 .search-box input{width:100%;padding:11px 14px;border-radius:11px;border:1px solid var(--line);background:var(--card);
   color:var(--ink);font-size:15px;font-family:var(--ui-font)}
 .search-box input:focus{outline:none;border-color:var(--cinnabar-soft)}
+#add-input{padding-right:84px}
+.paste-chip{position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:6px 10px;border-radius:8px;
+  border:1px solid var(--line);background:var(--paper);color:var(--sand);font-size:12.5px;font-weight:600;
+  cursor:pointer;font-family:var(--ui-font)}
+.paste-chip:active{color:var(--ink)}
 #search-results{display:none;margin-top:6px;max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:11px;background:var(--card)}
 .search-hit{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:none;border-bottom:1px solid var(--line);
   background:transparent;text-align:left;cursor:pointer;font-family:var(--ui-font)}
@@ -360,6 +365,7 @@ body{
   </div>
   <div class="search-box" style="margin-top:6px">
     <input type="text" id="add-input" placeholder="🔍 Type hanzi, pinyin or English…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="paste-chip" id="paste-one" type="button" title="Paste a word you copied in another app">📋 Paste</button>
   </div>
   <div class="add-tools">
     <button id="paste-btn">📋 Paste a list</button>
@@ -2862,7 +2868,7 @@ let homeMode="reading";                                    // mode toggle on the
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.9";
+const APP_VERSION="1.10";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -2870,6 +2876,7 @@ const DEFAULTS={
   caps:{1:15,2:15,3:30,4:40},   // daily "words for review" per level
   pct:30,                       // ...further capped at this % of that level's Solid pile
   listSort:"added",             // how the list editor was last ordered
+  lastList:null,                // the list a shared word was last added to
   maxGap:50,                    // never let a Solid word go longer than this without a review (0 = off)
   gradDays:[1,3,6],             // scheduled reviews after a word first becomes Solid
   autoSpeak:false,              // speak the word automatically when a reading card is flipped
@@ -2901,6 +2908,7 @@ function applySettings(o){
     ? o.gradDays.filter(n=>typeof n==="number"&&n>0&&n<=365).map(n=>Math.round(n)).sort((a,b)=>a-b).slice(0,8)
     : d.gradDays.slice();
   SET.listSort=LIST_SORTS.some(x=>x.v===o.listSort)?o.listSort:d.listSort;
+  SET.lastList=typeof o.lastList==="string"?o.lastList:null;
   SET.autoSpeak=typeof o.autoSpeak==="boolean"?o.autoSpeak:d.autoSpeak;
   SET.showStats=typeof o.showStats==="boolean"?o.showStats:d.showStats;
   SET.onlineLookup=typeof o.onlineLookup==="boolean"?o.onlineLookup:d.onlineLookup;
@@ -3686,7 +3694,7 @@ function showDialog(title,body,buttons){
       box.appendChild(el);
       if(b.kind==="safe"&&!safeBtn)safeBtn=el;
     });
-    const safeVal=(buttons.find(b=>b.kind==="safe")||{}).value;
+    const safeVal=(buttons.find(b=>b.cancel)||buttons.find(b=>b.kind==="safe")||{}).value;
     const onKey=e=>{
       if(e.key==="Escape"){e.preventDefault();close(safeVal);}
       if(e.key==="Enter"&&safeBtn){e.preventDefault();close(safeVal);}
@@ -3969,7 +3977,7 @@ function renderList(){
 }
 
 /* ---- adding words ---- */
-function openAdd(listId){
+function openAdd(listId,query,note){
   curList=listId;
   const L=listById(listId);
   $("#add-title").textContent="Add to "+(L?L.name:"list");
@@ -3977,9 +3985,16 @@ function openAdd(listId){
   $("#add-note").textContent="Dictionary loading…";
   $("#add-results").innerHTML="";
   show("scr-add");
-  loadDict().then(()=>{
-    $("#add-note").textContent=`Type a word in characters or pinyin. ${Object.keys(DICT).length.toLocaleString()} dictionary entries are available beyond the app’s own ${V.length.toLocaleString()} words.`;
+  try{window.scrollTo(0,0);}catch(e){}
+  return loadDict().then(()=>{
+    $("#add-note").textContent=note||`Type a word in characters or pinyin. ${Object.keys(DICT).length.toLocaleString()} dictionary entries are available beyond the app’s own ${V.length.toLocaleString()} words.`;
+    if(query)fillAddSearch(query);
   });
+}
+function fillAddSearch(q){
+  $("#add-input").value=q;
+  addHits=q.trim()?searchAll(q):[];
+  renderAddResults();
 }
 function searchAll(q){
   const nq=normalizeSearch(q);
@@ -3989,9 +4004,15 @@ function searchAll(q){
   const push=(hz,src)=>{if(seen[hz])return;seen[hz]=1;out.push({hz,src});};
   if(han){
     const raw=q.trim();
+    /* the word itself, when it's known, always comes first — searching 蒜
+       should not show 大蒜 above it */
+    if(VIDX[raw])push(raw,"HSK "+VIDX[raw][3]);
+    else if(customWords()[raw])push(raw,"added by you");
+    else if(DICT&&DICT[raw])push(raw,"dictionary");
     V.forEach(v=>{if(v[0].includes(raw))push(v[0],"HSK "+v[3]);});
     Object.keys(customWords()).forEach(hz=>{if(hz.includes(raw))push(hz,isEdited(hz)?("HSK "+VIDX[hz][3]):"added by you");});
     if(DICT)Object.keys(DICT).forEach(hz=>{if(hz.includes(raw))push(hz,"dictionary");});
+    wordsInside(raw).forEach(hz=>push(hz,(VIDX[hz]?("HSK "+VIDX[hz][3]):customWords()[hz]?"added by you":"dictionary")+" · part of it"));
     if(/^[一-鿿]+$/.test(raw))push(raw,"new word");
   }else{
     allWordEntries().forEach(v=>{
@@ -4004,6 +4025,20 @@ function searchAll(q){
     }
   }
   return out.slice(0,40);
+}
+/* Every known word hiding inside a longer string of characters, in reading
+   order, longer words first where two start at the same place. */
+function wordsInside(raw){
+  const run=String(raw||"").replace(/[^一-鿿]/g,"");
+  if(run.length<2)return [];
+  const known=hz=>!!(VIDX[hz]||customWords()[hz]||(DICT&&DICT[hz]));
+  const out=[];
+  for(let i=0;i<run.length;i++)
+    for(let L=Math.min(4,run.length-i);L>=1;L--){
+      const w=run.slice(i,i+L);
+      if(w!==run&&known(w)&&out.indexOf(w)<0)out.push(w);
+    }
+  return out;
 }
 function renderAddResults(){
   const L=listById(curList);
@@ -4243,10 +4278,114 @@ async function pasteFlow(){
   $("#add-note").textContent=bits.join(" · ");
 }
 
+
+/* ============ WORDS ARRIVING FROM OTHER APPS ============ */
+/* The app is registered as an Android share target (see manifest.json), so
+   "Share → 汉字卡" from Google Translate, Lens, WeChat or a web page opens it at
+   ./?text=…  The recognising has already been done by the other app; all this
+   has to do is pick the Chinese out of whatever came with it, ask which list,
+   and land on the add screen with it searched. */
+function hanRuns(text){
+  const seen={},out=[];
+  (String(text||"").match(/[一-鿿]+/g)||[]).forEach(r=>{if(!seen[r]){seen[r]=1;out.push(r);}});
+  return out;
+}
+async function pickListFor(what){
+  const Ls=userLists();
+  if(!Ls.length){
+    const go=await showDialog("Add "+what+" to a list",
+      "You don’t have any word lists yet. Make one now and "+what+" will go straight into it.",
+      [{label:"＋ Make a list",value:1,kind:"safe"},{label:"Cancel",value:0,kind:"plain",cancel:true}]);
+    if(!go)return null;
+    const name=await showPrompt("New list","Name it after the chapter, topic or place.","","e.g. Restaurant words");
+    const nm=String(name||"").trim();
+    if(!nm)return null;
+    const L={id:newListId(),name:nm,words:[]};
+    userLists().push(L);saveStore();
+    return L.id;
+  }
+  /* the list used last time comes first, since that is usually the answer */
+  const ordered=Ls.slice().sort((a,b)=>(b.id===SET.lastList)-(a.id===SET.lastList)).slice(0,6);
+  const btns=ordered.map((L,i)=>({label:L.name,value:L.id,kind:i===0?"safe":"plain"}));
+  btns.push({label:"＋ New list…",value:"__new",kind:"plain"});
+  btns.push({label:"Cancel",value:null,kind:"plain",cancel:true});
+  const pick=await showDialog("Add "+what+" to which list?","",btns);
+  if(pick!=="__new")return pick||null;
+  const name=await showPrompt("New list","Name it after the chapter, topic or place.","","e.g. Restaurant words");
+  const nm=String(name||"").trim();
+  if(!nm)return null;
+  const L={id:newListId(),name:nm,words:[]};
+  userLists().push(L);saveStore();
+  return L.id;
+}
+async function receiveText(text,how){
+  const runs=hanRuns(text);
+  if(!runs.length){
+    await showDialog("No Chinese in that",
+      "Nothing that came "+how+" contained Chinese characters, so there was nothing to add.",
+      [{label:"OK",value:1,kind:"safe"}]);
+    return false;
+  }
+  let run=runs[0];
+  if(runs.length>1){
+    /* a shared menu line or sentence can hold several separate words */
+    const btns=runs.slice(0,6).map((r,i)=>({label:r,value:r,kind:i===0?"safe":"plain"}));
+    btns.push({label:"Cancel",value:null,kind:"plain",cancel:true});
+    run=await showDialog("Which one?","That had more than one piece of Chinese in it.",btns);
+    if(!run)return false;
+  }
+  const id=await pickListFor(run);
+  if(!id)return false;
+  SET.lastList=id;saveSettings();
+  const note=run.length>1
+    ? "Tap ＋ beside the one you want. Words found inside “"+run+"” are listed too."
+    : "Tap ＋ to add it. Tap the word itself to change its meaning first.";
+  await openAdd(id,run,note);
+  return true;
+}
+/* Launch with ?text= / ?title= means we were opened from the share sheet. */
+function receiveFromLaunchUrl(){
+  let q;
+  try{q=new URLSearchParams(location.search);}catch(e){return;}
+  const text=[q.get("title"),q.get("text"),q.get("url")].filter(Boolean).join("\n");
+  if(!text)return;
+  /* tidy the address so a reload doesn't add the same word again */
+  try{history.replaceState(null,"",location.pathname);}catch(e){}
+  receiveText(text,"from the other app");
+}
+/* The clipboard route, for apps that can copy but can't share. */
+async function pasteOne(){
+  let t=null;
+  try{
+    if(navigator.clipboard&&navigator.clipboard.readText)t=await navigator.clipboard.readText();
+  }catch(e){t=null;}
+  if(t==null){
+    $("#add-note").textContent="The clipboard couldn’t be read here. Long-press the search box and choose Paste instead.";
+    try{$("#add-input").focus();}catch(e){}
+    return;
+  }
+  const runs=hanRuns(t);
+  if(!runs.length){
+    /* no characters — it may be pinyin or English, which the search handles too */
+    const plain=String(t).trim().split(/\n/)[0].slice(0,40);
+    if(!plain){$("#add-note").textContent="The clipboard is empty.";return;}
+    await loadDict();fillAddSearch(plain);return;
+  }
+  let run=runs[0];
+  if(runs.length>1){
+    const btns=runs.slice(0,6).map((r,i)=>({label:r,value:r,kind:i===0?"safe":"plain"}));
+    btns.push({label:"Cancel",value:null,kind:"plain",cancel:true});
+    run=await showDialog("Which one?","What you copied had more than one piece of Chinese in it.",btns);
+    if(!run)return;
+  }
+  await loadDict();fillAddSearch(run);
+}
+
 $("#list-back").onclick=()=>{renderHome();show("scr-home");};
 $("#add-back").onclick=()=>{renderList();show("scr-list");};
 $("#add-done").onclick=()=>{renderList();show("scr-list");};
 $("#paste-btn").onclick=()=>pasteFlow();
+$("#paste-one").onclick=()=>pasteOne();
 $("#add-input").oninput=e=>{
   const q=e.target.value;
   if(!q.trim()){addHits=[];renderAddResults();return;}
@@ -5259,7 +5398,7 @@ function answer(r){
 $("#done-home").onclick=()=>{renderHome();show("scr-home");};
 $("#done-again").onclick=()=>startSession(level,mode,reviewing);
 
-loadStore();
+loadStore().then(receiveFromLaunchUrl);
 /* Ask the browser to keep this app's data rather than evicting it under
    storage pressure — progress here represents months of study. */
 if(navigator.storage&&navigator.storage.persist){

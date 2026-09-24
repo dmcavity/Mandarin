@@ -2,7 +2,7 @@
    The page itself is NETWORK-FIRST: every launch checks for a new index.html,
    so GitHub updates appear on the next open. If offline, the cached copy is
    served instead. Static assets stay cache-first for speed. */
-const CACHE = "hsk-flashcards-v5";
+const CACHE = "hsk-flashcards-v6";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./strokes.json", "./dict.json"];
 
 self.addEventListener("install", (e) => {
@@ -21,15 +21,26 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const isPage = e.request.mode === "navigate" || e.request.destination === "document";
   if (isPage) {
-    /* network-first: fresh page when online, cached page when offline */
+    /* network-first: fresh page when online, cached page when offline.
+       A word shared from another app arrives as ./?text=…  Every such address
+       is the same page, so it is cached once under the plain address rather
+       than once per shared word — and offline, any of them is answered from
+       that one copy, which is what makes sharing work with no signal. */
+    const url = new URL(e.request.url);
+    const plain = url.search ? new Request(url.origin + url.pathname) : e.request;
     e.respondWith(
       fetch(e.request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(plain, copy));
+          }
           return res;
         })
-        .catch(() => caches.match(e.request).then((m) => m || caches.match("./index.html")))
+        .catch(() =>
+          caches.match(plain, { ignoreSearch: true })
+            .then((m) => m || caches.match("./index.html"))
+        )
     );
     return;
   }
