@@ -321,6 +321,53 @@ body{
 .done-card .row button{flex:1;padding:13px 0;border-radius:10px;border:none;font-size:15px;font-weight:700;cursor:pointer}
 .again{background:var(--ink);color:#fff}
 .home-btn{background:#EFE9DC;color:var(--ink)}
+
+/* ---- progress screen ---- */
+.gear.stats-btn{margin-left:auto}
+.stats-btn+.gear{margin-left:2px}
+.risk-link{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:10px;padding:11px 14px;
+  border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13.5px;
+  font-family:var(--ui-font);cursor:pointer;text-align:left}
+.risk-link b{font-size:16px;margin-right:6px}
+.risk-link .chev{margin-left:8px}
+.st-seg{display:flex;gap:6px;margin-top:12px}
+.st-seg button{flex:1;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--sand);
+  font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ui-font)}
+.st-seg button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.st-card{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:14px 15px}
+.st-card h3{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--sand);font-weight:700}
+.st-hero{display:flex;align-items:baseline;gap:9px;margin-top:6px}
+.st-hero b{font-size:32px;line-height:1;color:var(--ink)}
+.st-hero span{font-size:13px;color:var(--sand);line-height:1.35}
+.dur-legend{display:flex;flex-wrap:wrap;gap:6px 12px;margin:14px 0 10px}
+.dur-legend span{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--sand)}
+.dur-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.dur-row{display:grid;grid-template-columns:84px 1fr 38px;align-items:center;gap:8px;margin:7px 0}
+.dur-row .lv{font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap}
+.dur-row .n{font-size:11.5px;color:var(--sand);text-align:right}
+.dur-bar{display:flex;gap:2px;height:22px;background:var(--card)}
+.dur-bar .dseg{display:block;height:100%;min-width:3px;cursor:pointer;border:none;padding:0;margin:0;border-radius:0;font-size:0;line-height:0}
+.dur-bar .dseg:first-child{border-radius:4px 0 0 4px}
+.dur-bar .dseg:last-child{border-radius:0 4px 4px 0}
+.dur-bar .dseg:only-child{border-radius:4px}
+.dur-bar .dseg.sel{outline:2px solid var(--ink);outline-offset:1px}
+.dur-tip{min-height:18px;font-size:12px;color:var(--ink);margin-top:6px}
+.dur-untested{background:repeating-linear-gradient(135deg,#D9D2C3 0 3px,#EFEAE0 3px 6px)}
+.st-card details{margin-top:10px}
+.st-card summary{font-size:12px;color:var(--sand);cursor:pointer}
+.st-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11.5px}
+.st-table th,.st-table td{padding:4px 3px;text-align:right;border-bottom:1px solid var(--line)}
+.st-table th:first-child,.st-table td:first-child{text-align:left}
+.st-table th{color:var(--sand);font-weight:600}
+.risk-go{margin-top:12px;width:100%;padding:11px 0;border-radius:10px;border:none;background:var(--cinnabar);color:#fff;
+  font-size:14px;font-weight:700;cursor:pointer;font-family:var(--ui-font)}
+.risk-list{margin-top:10px}
+.risk-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 2px;border-top:1px solid var(--line)}
+.risk-row .h{font-size:22px;font-family:var(--hanzi-font,inherit)}
+.risk-row .m{font-size:12px;color:var(--sand);line-height:1.35;overflow:hidden}
+.risk-row .m b{color:var(--ink);font-weight:600}
+.risk-row .d{font-size:11.5px;color:var(--ink);text-align:right;white-space:nowrap}
+.risk-row .d i{display:block;font-style:normal;color:var(--sand)}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -333,6 +380,7 @@ body{
       <h1>汉字卡</h1>
       <div class="sub">HSK Flashcard Drills</div>
     </div>
+    <button class="gear stats-btn" id="stats-btn" aria-label="Progress" title="Progress"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><rect x="3" y="13" width="4.2" height="8" rx="1.2" fill="currentColor"/><rect x="9.9" y="8" width="4.2" height="13" rx="1.2" fill="currentColor"/><rect x="16.8" y="3" width="4.2" height="18" rx="1.2" fill="currentColor"/></svg></button>
     <button class="gear" id="gear-btn" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M9.89 4.28L10.25 0.94L13.75 0.94L14.11 4.28A8 8 0 0 1 15.96 5.05L18.58 2.94L21.06 5.42L18.95 8.04A8 8 0 0 1 19.72 9.89L23.06 10.25L23.06 13.75L19.72 14.11A8 8 0 0 1 18.95 15.96L21.06 18.58L18.58 21.06L15.96 18.95A8 8 0 0 1 14.11 19.72L13.75 23.06L10.25 23.06L9.89 19.72A8 8 0 0 1 8.04 18.95L5.42 21.06L2.94 18.58L5.05 15.96A8 8 0 0 1 4.28 14.11L0.94 13.75L0.94 10.25L4.28 9.89A8 8 0 0 1 5.05 8.04L2.94 5.42L5.42 2.94L8.04 5.05A8 8 0 0 1 9.89 4.28ZM12 8.05A3.95 3.95 0 1 0 12 15.95A3.95 3.95 0 1 0 12 8.05Z"/></svg></button>
   </div>
   <div class="seg" id="mode-seg">
@@ -376,6 +424,14 @@ body{
 </div>
 
 <!-- ================= SETTINGS ================= -->
+<div class="screen" id="scr-stats">
+  <div class="set-head">
+    <button id="stats-back" aria-label="Back">‹</button>
+    <h2>Progress</h2>
+  </div>
+  <div id="stats-body"></div>
+</div>
+
 <div class="screen" id="scr-settings">
   <div class="set-head">
     <button id="set-back" aria-label="Back to home">‹</button>
@@ -2864,11 +2920,99 @@ let shuffleOn=true;
 let deck=[],idx=0,mode="reading",level=1,deckName="",reviewing=null;   // reviewing: null | "s" | "t" | "n"
 let homeMode="reading";                                    // mode toggle on the home screen
 
+/* ============ EVENT LOG ============ */
+/* Everything else the app stores is a snapshot — where each word stands NOW.
+   This is the history: one small record per answer, kept in the phone's
+   IndexedDB database rather than in the progress store, because a year of it
+   is ten times the size of everything else put together and only ever grows.
+   Fields (short names keep each record around 150 bytes):
+     t   when (epoch ms)          w  the word          m  "r" reading / "w" writing
+     a   the answer: s / t / n, or k for a skip without rating
+     p   the rating before this answer ("" if new)
+     g   days since the previous answer on this word, null if unknown
+     ms  active time on the card, shown → answered, minus time the app was hidden
+     fl  time to flip (ms)        rv  time to the first View/Stroke reveal (writing)
+     x   where it came from: "" study, s/t/n a filtered pass, x daily review, q search
+     d   the deck the session was in
+     st, bs, sr, lp   streak, proven gap, Solid reviews and lapses BEFORE the answer
+     re  1 when this re-answers a card already answered in the same pass
+   A reset writes a marker {t, k:"reset", d} instead of deleting history. */
+const LOG_DB="hsk-log",LOG_OS="events";
+let logDBp=null;const logMem=[];
+function openLog(){
+  if(logDBp)return logDBp;
+  logDBp=new Promise(res=>{
+    try{
+      if(typeof indexedDB==="undefined"||!indexedDB)return res(null);
+      const rq=indexedDB.open(LOG_DB,1);
+      rq.onupgradeneeded=()=>{
+        const db=rq.result;
+        if(!db.objectStoreNames.contains(LOG_OS))db.createObjectStore(LOG_OS,{keyPath:"id",autoIncrement:true}).createIndex("t","t");
+      };
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>res(null);rq.onblocked=()=>res(null);
+    }catch(e){res(null);}
+  });
+  return logDBp;
+}
+/* Never throws and never blocks the card: if the database is unavailable the
+   record is held in memory for this session instead. */
+async function logEvent(ev){
+  const db=await openLog();
+  if(!db){logMem.push(ev);return;}
+  try{db.transaction(LOG_OS,"readwrite").objectStore(LOG_OS).add(ev);}catch(e){logMem.push(ev);}
+}
+async function readLog(){
+  const db=await openLog();
+  if(!db)return logMem.slice();
+  return new Promise(res=>{
+    try{
+      const out=[];
+      const rq=db.transaction(LOG_OS,"readonly").objectStore(LOG_OS).openCursor();
+      rq.onsuccess=e=>{const c=e.target.result;if(c){const v=Object.assign({},c.value);delete v.id;out.push(v);c.continue();}else res(out.concat(logMem));};
+      rq.onerror=()=>res(logMem.slice());
+    }catch(e){res(logMem.slice());}
+  });
+}
+/* Restoring a backup MERGES its history with what is here rather than
+   replacing it, so restoring an older backup can't wipe newer history. */
+function logKey(e){return [e.t,e.k||"",e.w||"",e.m||"",e.a||""].join("|");}
+async function mergeLog(events){
+  if(!Array.isArray(events)||!events.length)return 0;
+  const have=new Set((await readLog()).map(logKey));
+  const fresh=events.filter(e=>e&&typeof e.t==="number"&&!have.has(logKey(e)));
+  if(!fresh.length)return 0;
+  const db=await openLog();
+  if(!db){fresh.forEach(e=>logMem.push(e));return fresh.length;}
+  await new Promise(res=>{
+    try{
+      const tx=db.transaction(LOG_OS,"readwrite"),os=tx.objectStore(LOG_OS);
+      fresh.forEach(e=>{const v=Object.assign({},e);delete v.id;os.add(v);});
+      tx.oncomplete=res;tx.onerror=res;tx.onabort=res;
+    }catch(e){fresh.forEach(x=>logMem.push(x));res();}
+  });
+  return fresh.length;
+}
+/* Per-card stopwatch. Time with the app in the background is subtracted so a
+   card left open while you answer a text doesn't read as a five-minute struggle. */
+let cardClock={shown:0,flip:null,reveal:null,hidden:0,hidAt:null};
+function startCardClock(){cardClock={shown:Date.now(),flip:null,reveal:null,hidden:0,hidAt:document.hidden?Date.now():null};}
+function clockMark(k){if(cardClock[k]==null)cardClock[k]=Date.now();}
+function clockActive(until){
+  let hid=cardClock.hidden;
+  if(cardClock.hidAt!=null)hid+=until-cardClock.hidAt;
+  return Math.max(0,until-cardClock.shown-hid);
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){if(cardClock.hidAt==null)cardClock.hidAt=Date.now();}
+  else if(cardClock.hidAt!=null){cardClock.hidden+=Date.now()-cardClock.hidAt;cardClock.hidAt=null;}
+});
+
 /* ============ SETTINGS ============ */
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.10";
+const APP_VERSION="1.11";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -3536,6 +3680,119 @@ function toggleDeck(id){
   SET.open=[...open];saveSettings();renderHome();
 }
 
+/* ============ PROGRESS ============ */
+/* "Proven gap" = the longest a word has gone between reviews and still been
+   remembered (rbest). It is recorded from version 1.8 onward, so a word that
+   hasn't been answered since then has no record yet — shown as "not yet tested"
+   rather than guessed. */
+const DUR_BANDS=[
+  {label:"Not yet tested",lo:-1,hi:1,  col:null},
+  {label:"1–3 days",     lo:1, hi:3,   col:"#B9E3D1"},
+  {label:"3–7 days",     lo:3, hi:7,   col:"#7DC2A7"},
+  {label:"1–2 weeks",    lo:7, hi:14,  col:"#469C7E"},
+  {label:"2–4 weeks",    lo:14,hi:28,  col:"#22765C"},
+  {label:"4+ weeks",     lo:28,hi:1e9, col:"#044F3B"}
+];
+function durBand(best){
+  if(!(best>=1))return 0;
+  for(let i=1;i<DUR_BANDS.length;i++)if(best<DUR_BANDS[i].hi)return i;
+  return DUR_BANDS.length-1;
+}
+const LEVEL_ROWS=[1,2,3,4,0];
+function levelName(lv){return lv?"HSK "+lv:"Your words";}
+function wordLevel(hz){return VIDX[hz]?VIDX[hz][3]:0;}
+function solidWords(md){
+  const R=rmap(md);
+  return Object.keys(R).filter(hz=>R[hz]==="s"&&wordEntry(hz));
+}
+function durability(md){
+  const BS=rbest(md);
+  const rows={};LEVEL_ROWS.forEach(lv=>rows[lv]=DUR_BANDS.map(()=>0));
+  solidWords(md).forEach(hz=>{const lv=wordLevel(hz);if(rows[lv])rows[lv][durBand(BS[hz])]++;});
+  return rows;
+}
+/* At risk: Solid, not waiting on a scheduled 1/3/6… review (those are already
+   booked), has a proven gap of at least a day, and it has now been longer than
+   that since you last answered it. */
+function atRisk(md){
+  const BS=rbest(md),RL=rlast(md),G=grad(md),now=Date.now();
+  return solidWords(md).filter(hz=>!gradPending(G[hz])&&BS[hz]>=1&&RL[hz])
+    .map(hz=>({hz,days:(now-RL[hz])/864e5,best:BS[hz]}))
+    .filter(o=>o.days>o.best)
+    .sort((a,b)=>b.days/b.best-a.days/a.best);
+}
+function untested(md){
+  const BS=rbest(md),G=grad(md);
+  return solidWords(md).filter(hz=>!gradPending(G[hz])&&!(BS[hz]>=1)).length;
+}
+function startRiskReview(md){
+  const list=atRisk(md);
+  const cards=list.map(o=>wordEntry(o.hz)).filter(Boolean);
+  if(!cards.length)return;
+  navStack=[];
+  level=0;deckName="Past their proven gap";mode=md;reviewing="a";
+  let cs=cards;
+  if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
+  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
+  show("scr-card");renderCard();renderReturnBar();
+}
+let statsMode=null;
+function renderStats(){
+  const md=statsMode||homeMode;
+  const body=$("#stats-body");
+  const esc=t=>String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const rows=durability(md);
+  const tot=DUR_BANDS.map((_,i)=>LEVEL_ROWS.reduce((a,lv)=>a+rows[lv][i],0));
+  const nSolid=tot.reduce((a,b)=>a+b,0);
+  const week=tot.slice(3).reduce((a,b)=>a+b,0);
+  const tested=nSolid-tot[0];
+  const risk=atRisk(md),unt=untested(md);
+  const swatch=(i)=>DUR_BANDS[i].col?`background:${DUR_BANDS[i].col}`:"";
+  const segCls=i=>"dseg"+(DUR_BANDS[i].col?"":" dur-untested");
+  const bars=LEVEL_ROWS.filter(lv=>rows[lv].some(Boolean)).map(lv=>{
+    const r=rows[lv],n=r.reduce((a,b)=>a+b,0);
+    const segs=r.map((c,i)=>c?`<button class="${segCls(i)}" style="flex:${c};${swatch(i)}" data-tip="${esc(levelName(lv))} · ${esc(DUR_BANDS[i].label)} · ${c} word${c===1?"":"s"} (${Math.round(100*c/n)}%)" aria-label="${esc(levelName(lv))}, ${esc(DUR_BANDS[i].label)}: ${c}"></button>`:"").join("");
+    return `<div class="dur-row"><span class="lv">${esc(levelName(lv))}</span><div class="dur-bar">${segs}</div><span class="n">${n}</span></div>`;
+  }).join("");
+  const table=`<table class="st-table"><tr><th></th>${DUR_BANDS.map(b=>`<th>${esc(b.label.replace("Not yet tested","untested"))}</th>`).join("")}</tr>`+
+    LEVEL_ROWS.filter(lv=>rows[lv].some(Boolean)).map(lv=>`<tr><td>${esc(levelName(lv))}</td>${rows[lv].map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")+`</table>`;
+  const riskRows=risk.slice(0,40).map(o=>{
+    const e=wordEntry(o.hz)||[o.hz,"",""];
+    return `<div class="risk-row"><span class="h">${esc(o.hz)}</span>
+      <span class="m"><b>${esc(e[1])}</b> ${esc(e[2])}</span>
+      <span class="d">${Math.floor(o.days)} d since<i>lasted ${Math.floor(o.best)} d</i></span></div>`;
+  }).join("");
+  body.innerHTML=`
+    <div class="st-seg" id="st-seg">
+      <button data-md="reading" class="${md==="reading"?"on":""}">认 Reading</button>
+      <button data-md="writing" class="${md==="writing"?"on":""}">写 Writing</button>
+    </div>
+    <div class="st-card">
+      <h3>How long your words last</h3>
+      <div class="st-hero"><b>${week}</b><span>Solid word${week===1?"":"s"} proven to last a week or more<br>of ${nSolid} Solid</span></div>
+      <div class="dur-legend">${DUR_BANDS.map((b,i)=>`<span><i class="${b.col?"":"dur-untested"}" style="${swatch(i)}"></i>${esc(b.label)}</span>`).join("")}</div>
+      ${nSolid?bars:`<div class="set-note">No Solid words in ${md} yet.</div>`}
+      <div class="dur-tip" id="dur-tip">${nSolid?"Tap a segment for its count.":""}</div>
+      ${nSolid?`<details><summary>Show the numbers</summary>${table}</details>`:""}
+      <div class="set-note">Each word's <b>proven gap</b> is the longest it has gone between reviews and still been remembered. It is recorded from version 1.8 on${tested?"":` — nothing in ${md} has been reviewed since then, so every word is still untested`}.</div>
+    </div>
+    <div class="st-card">
+      <h3>Past their proven gap</h3>
+      <div class="st-hero"><b>${risk.length}</b><span>Solid word${risk.length===1?"":"s"} it's been longer since you reviewed<br>than ${risk.length===1?"it has":"they have"} ever lasted</span></div>
+      ${risk.length?`<button class="risk-go" id="risk-go">Review ${risk.length===1?"it":"these "+risk.length} now</button>
+        <div class="risk-list">${riskRows}</div>
+        ${risk.length>40?`<div class="set-note">Showing the 40 most overdue.</div>`:""}`:""}
+      <div class="set-note">${unt?`${unt} more Solid word${unt===1?" hasn't":"s haven't"} been tested across a gap yet, so ${unt===1?"its":"their"} risk is unknown; the daily review will get to them. `:""}Words on their 1-3-6 schedule after being learned aren't counted — those reviews are already booked.</div>
+    </div>`;
+  body.querySelectorAll("#st-seg button").forEach(b=>b.onclick=()=>{statsMode=b.dataset.md;renderStats();});
+  body.querySelectorAll(".dur-bar .dseg").forEach(b=>b.onclick=()=>{
+    body.querySelectorAll(".dur-bar .dseg.sel").forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel");$("#dur-tip").textContent=b.dataset.tip;
+  });
+  const go=$("#risk-go");if(go)go.onclick=()=>startRiskReview(md);
+}
+function openStats(){statsMode=homeMode;renderStats();show("scr-stats");try{window.scrollTo(0,0);}catch(e){}}
+
 const ALL_LEVELS=[1,2,3,4];
 function renderHome(){
   document.querySelectorAll("#mode-seg button").forEach(b=>b.classList.toggle("on",b.dataset.md===homeMode));
@@ -3566,6 +3823,15 @@ function renderHome(){
       <div class="big"><b>✓</b><span>review complete</span></div>
       <div class="from">A fresh set is drawn each day.</div>`;
     wrap.appendChild(t);
+  }
+
+  const riskN=atRisk(homeMode).length;
+  if(riskN){
+    const r=document.createElement("button");
+    r.className="risk-link";r.id="risk-link";
+    r.innerHTML=`<span><b>${riskN}</b> word${riskN===1?"":"s"} past ${riskN===1?"its":"their"} proven gap</span><span class="chev">›</span>`;
+    r.onclick=openStats;
+    wrap.appendChild(r);
   }
 
   const section=title=>{const e=document.createElement("div");e.className="sec";e.textContent=title;wrap.appendChild(e);};
@@ -3711,10 +3977,12 @@ function backupFilename(){
   const d=new Date(),p=n=>String(n).padStart(2,"0");
   return `hsk-progress-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.json`;
 }
-function exportProgress(){
+async function exportProgress(){
   syncSettings();
-  const payload={app:"hsk-flashcards",version:2,exported:new Date().toISOString(),
-                 progress:store,settings:SET,shuffle:shuffleOn,mode:homeMode};
+  let log=[];
+  try{log=await readLog();}catch(e){log=[];}
+  const payload={app:"hsk-flashcards",version:3,exported:new Date().toISOString(),
+                 progress:store,settings:SET,shuffle:shuffleOn,mode:homeMode,log};
   const text=JSON.stringify(payload);
   try{
     const blob=new Blob([text],{type:"application/json"});
@@ -3744,7 +4012,7 @@ function applyRestore(payload){
   return words;
 }
 async function doBackup(){
-  const r=exportProgress();
+  const r=await exportProgress();
   if(r==="clipboard")await showDialog("Copied to clipboard","Your device blocked the file download, so the backup was copied to the clipboard instead. Paste it somewhere safe — you can restore from that text later.",[{label:"OK",value:1,kind:"safe"}]);
   else if(!r)await showDialog("Backup failed","This browser wouldn't allow a download or clipboard copy. Try again from a normal browser tab.",[{label:"OK",value:1,kind:"safe"}]);
 }
@@ -3759,9 +4027,11 @@ $("#restore-file").onchange=async e=>{
   e.target.value="";
   if(!f)return;
   try{
-    const words=applyRestore(JSON.parse(await f.text()));
+    const payload=JSON.parse(await f.text());
+    const words=applyRestore(payload);
+    const added=await mergeLog(payload&&payload.log);
     renderHome();renderSettings();
-    await showDialog("Progress restored",`Restored ratings for ${words} word entries.`,[{label:"OK",value:1,kind:"safe"}]);
+    await showDialog("Progress restored",`Restored ratings for ${words} word entries${added?` and ${added.toLocaleString()} answers of study history`:""}.`,[{label:"OK",value:1,kind:"safe"}]);
   }catch(err){
     await showDialog("Couldn't read that file","That doesn't look like an HSK flashcards backup. Pick the .json file created by \u201cBack up progress\u201d.",[{label:"OK",value:1,kind:"safe"}]);
   }
@@ -3802,7 +4072,7 @@ async function doReset(deckId){
      {label:"Cancel",value:"cancel",kind:"plain"}]);
   if(step2==="cancel")return;
   if(step2==="backup"){
-    const r=exportProgress();
+    const r=await exportProgress();
     if(!r){
       const cont=await showDialog("Backup failed",
         "The backup couldn't be saved, so nothing has been deleted yet. You can cancel and try again, or reset anyway.",
@@ -3811,6 +4081,7 @@ async function doReset(deckId){
     }
   }
   wipeProgress(deckId);
+  logEvent({t:Date.now(),k:"reset",d:deckId?String(deckId):"all"});   /* history is kept; the reset is marked in it */
   saveStore();renderHome();renderSettings();
 }
 
@@ -4649,6 +4920,8 @@ function renderSettings(){
   renderVoicePicker();
 }
 $("#gear-btn").onclick=()=>{renderSettings();show("scr-settings");};
+$("#stats-btn").onclick=openStats;
+$("#stats-back").onclick=()=>{renderHome();show("scr-home");};
 $("#set-back").onclick=()=>{renderHome();show("scr-home");};
 
 /* ============ SEARCH ============ */
@@ -4745,6 +5018,11 @@ $("#back-btn").onclick=()=>{
   if(idx>0){idx--;renderCard();}   /* re-shows the previous card; re-answering replaces the earlier rating */
 };
 $("#next-btn").onclick=()=>{       /* skip without rating: the card keeps its current bucket */
+  if(deck[idx]&&!given[idx]){
+    const hz=deck[idx][0],t=Date.now(),lr=rlast(mode)[hz];
+    logEvent({t,w:hz,m:mode==="reading"?"r":"w",a:"k",p:rmap(mode)[hz]||"",
+      g:lr?Math.round((t-lr)/864e5*100)/100:null,ms:clockActive(t),x:reviewing||"",d:String(level)});
+  }
   idx++;
   if(idx<deck.length)renderCard();else endSession();
 };
@@ -4764,7 +5042,7 @@ function endSession(){
 function updateHead(){
   $("#back-btn").style.visibility=idx>0?"visible":"hidden";
   $("#prog-bar").style.width=Math.round(100*idx/deck.length)+"%";
-  const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Review",q:"Search"}[reviewing]||"";
+  const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Review",q:"Search",a:"At risk"}[reviewing]||"";
   const who=deckName||"All decks";
   $("#session-info").textContent=`${who} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}`;
 }
@@ -4786,6 +5064,7 @@ function cardStat(hz){
 }
 function renderCard(){
   updateHead();
+  startCardClock();
   revealMode=null;drawLocked=false;eraseMode=false;answeredThisCard=false;canvases=[]; /* buttons for this card don't exist yet, so no sync needed here */
   const card=$("#card");
   const [hz,py,en]=deck[idx];
@@ -4810,6 +5089,7 @@ function renderCard(){
    once on first flip and then kept alive, so flipping to the front and back
    again preserves the drawing canvas, revealed strokes, and example state. */
 function flipCard(toBack){
+  if(toBack)clockMark("flip");
   const card=$("#card"),f=$("#face-front"),b=$("#face-back");
   if(toBack&&!b.dataset.built){
     const [hz,py,en]=deck[idx];
@@ -5295,6 +5575,7 @@ function setRevealMode(m){
    animation, rendered faint and BEHIND the canvas — so drawing stays unlocked
    and the user's ink appears on top of the faint character as a tracing guide. */
 function revealInstant(chars,size){
+  clockMark("reveal");
   clearReveal();
   document.querySelectorAll("#squares .writer").forEach((el,i)=>{
     el.classList.add("faint");
@@ -5305,6 +5586,7 @@ function revealInstant(chars,size){
 }
 
 function revealWriting(chars,size,hz){
+  clockMark("reveal");
   clearReveal();
   setRevealMode("stroke");drawLocked=true;
   canvases.forEach(c=>c.el.style.opacity=.3);
@@ -5389,6 +5671,14 @@ function answer(r){
     delete G[hz];                                        /* dropped out of Solid — schedule resets */
   }
   if(reviewing==="x")reviewDecksFor(hz).forEach(id=>markReviewed(id,mode,hz));
+  logEvent({t:now,w:hz,m:mode==="reading"?"r":"w",a:r,p:was.r||"",
+    g:was.t?Math.round(gap*100)/100:null,
+    ms:clockActive(now),
+    fl:cardClock.flip!=null?cardClock.flip-cardClock.shown:null,
+    rv:cardClock.reveal!=null?cardClock.reveal-cardClock.shown:null,
+    x:reviewing||"",d:String(level),
+    st:was.st||0,bs:was.bs||0,sr:was.sr==null?null:was.sr,lp:was.lp||0,
+    re:prev?1:0});
   sess[r]++;
   saveStore();
   idx++;
