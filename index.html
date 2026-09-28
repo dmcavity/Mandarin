@@ -3012,7 +3012,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.11";
+const APP_VERSION="1.12";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -4117,7 +4117,8 @@ function openList(id){
 }
 
 function wordRow(hz,opts){
-  const e=wordEntry(hz)||(DICT&&DICT[hz]?[hz,DICT[hz][0],DICT[hz][1],0]:null);
+  const e=wordEntry(hz)||(DICT&&DICT[hz]?[hz,DICT[hz][0],DICT[hz][1],0]:null)
+         ||(onlineGloss[hz]?[hz,guessPinyin(hz),onlineGloss[hz],0]:null);
   const esc=t=>String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const py=e?e[1]:"",en=e?e[2]:"";
   return `<div class="wrow${opts.dim?" dim":""}${opts.tap?" tappable":""}" data-hz="${esc(hz)}"${opts.tap?' data-edit-word="'+esc(hz)+'"':""}>
@@ -4286,16 +4287,44 @@ function searchAll(q){
     wordsInside(raw).forEach(hz=>push(hz,(VIDX[hz]?("HSK "+VIDX[hz][3]):customWords()[hz]?"added by you":"dictionary")+" · part of it"));
     if(/^[一-鿿]+$/.test(raw))push(raw,"new word");
   }else{
+    /* Ranked, so that "garlic" puts 蒜 (garlic) above 鸡毛蒜皮 (trivial matters,
+       literally chicken feathers and garlic skins). */
+    const score=englishScorer(q);
+    const cand=[];
     allWordEntries().forEach(v=>{
-      if(normalizeSearch(v[1]).includes(nq)||normalizeSearch(v[2]).includes(nq))
-        push(v[0],VIDX[v[0]]?("HSK "+VIDX[v[0]][3]):"added by you");
+      const sc=score(v[1],v[2]);
+      if(sc<9)cand.push({hz:v[0],sc,app:1,src:VIDX[v[0]]?("HSK "+VIDX[v[0]][3]):"added by you"});
     });
-    if(DICTN)for(let i=0;i<DICTN.length&&out.length<80;i++){
-      const [hz,py,en]=DICTN[i];
-      if(py.includes(nq)||en.includes(nq))push(hz,"dictionary");
+    if(DICT)for(const hz in DICT){
+      const sc=score(DICT[hz][0],DICT[hz][1]);
+      if(sc<9)cand.push({hz,sc,app:0,src:"dictionary"});
     }
+    cand.sort((a,b)=>a.sc-b.sc||b.app-a.app||a.hz.length-b.hz.length);
+    cand.forEach(c=>push(c.hz,c.src));
   }
   return out.slice(0,40);
+}
+/* How well a word matches an English or pinyin query: 0 the query IS one of its
+   meanings (ignoring "to", "a", "the" and anything in brackets) or its exact
+   pinyin, 1 a whole-word match, 2 a partial match, 9 no match. Spaces are kept
+   on both sides for English, so "living room" can match. */
+function englishScorer(q){
+  const plain=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const strip=t=>t.replace(/\([^)]*\)/g," ").replace(/^\s*(to|a|an|the)\s+/,"").replace(/\s+/g," ").trim();
+  const qw=strip(plain(q));
+  const qn=qw.replace(/\s+/g,"");
+  if(!qn)return ()=>9;
+  const reEsc=qw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const whole=new RegExp("(^|[^a-z])"+reEsc+"([^a-z]|$)");
+  return (py,en)=>{
+    const p=plain(py).replace(/[^a-z]/g,"");
+    const e=plain(en);
+    const gl=e.split(/[;,/]/).map(strip);
+    if(gl.includes(qw)||(p&&p===qn))return 0;
+    if(whole.test(e))return 1;
+    if(e.replace(/\s+/g,"").includes(qn)||(p&&qn.length>=2&&p.includes(qn)))return 2;
+    return 9;
+  };
 }
 /* Every known word hiding inside a longer string of characters, in reading
    order, longer words first where two start at the same place. */
@@ -4333,7 +4362,11 @@ function renderAddResults(){
     if(inList.has(h.hz))return wordRow(h.hz,{act:"rm",btn:"✕",cls:"rm",src:src,tap:true});
     if(!known)return wordRow(h.hz,{act:"add",btn:"＋",cls:"need",src:"not in the dictionary",tap:true});
     return wordRow(h.hz,{act:"add",btn:"＋",src:src,tap:true});
-  }).join("");
+  }).join("")+(q.trim()
+    ? `<button class="review-btn" style="border-style:solid;margin-top:10px" id="make-word">＋ None of these — create the word yourself</button>`
+    : "");
+  const mk2=$("#make-word");
+  if(mk2)mk2.onclick=()=>createWordFromQuery(/[一-鿿]/.test(q)?q:"");
   box.querySelectorAll('[data-act="add"]').forEach(b=>b.onclick=e=>{e.stopPropagation();addWordToList(b.dataset.hz);});
   box.querySelectorAll('[data-act="rm"]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
@@ -4391,6 +4424,25 @@ async function lookupMeaning(hz){
     t=String(t).trim();
     if(!t||t===hz)return null;
     return t.length>46?t.slice(0,46).replace(/\s\S*$/,""):t;
+  }catch(e){if(timer)clearTimeout(timer);return null;}
+}
+/* English that an online lookup turned into Chinese this session, so a word
+   added from it keeps the meaning you shared instead of arriving blank. */
+const onlineGloss={};
+async function lookupChinese(en){
+  if(!SET.onlineLookup)return null;
+  const url="https://api.mymemory.translated.net/get?q="+encodeURIComponent(en)+"&langpair=en|zh-CN";
+  let timer=null;
+  try{
+    const ctrl=typeof AbortController!=="undefined"?new AbortController():null;
+    if(ctrl)timer=setTimeout(()=>ctrl.abort(),9000);
+    const r=await fetch(url,ctrl?{signal:ctrl.signal}:undefined);
+    if(timer)clearTimeout(timer);
+    if(!r.ok)return null;
+    const j=await r.json();
+    const t=j&&j.responseData&&j.responseData.translatedText;
+    const runs=hanRuns(t);
+    return runs.length?runs[0]:null;
   }catch(e){if(timer)clearTimeout(timer);return null;}
 }
 function lookupTool(getHz){
@@ -4496,7 +4548,7 @@ function addWordToList(hz,silent){
   if(!wordEntry(hz)){
     const d=DICT&&DICT[hz];
     /* unknown word: add it now with whatever we can infer, details can follow */
-    customWords()[hz]=d?[hz,d[0],d[1],0]:[hz,guessPinyin(hz),"",0];
+    customWords()[hz]=d?[hz,d[0],d[1],0]:[hz,guessPinyin(hz),onlineGloss[hz]||"",0];
   }
   if(L.words.indexOf(hz)<0)L.words.push(hz);
   saveStore();
@@ -4592,10 +4644,50 @@ async function pickListFor(what){
 async function receiveText(text,how){
   const runs=hanRuns(text);
   if(!runs.length){
-    await showDialog("No Chinese in that",
-      "Nothing that came "+how+" contained Chinese characters, so there was nothing to add.",
-      [{label:"OK",value:1,kind:"safe"}]);
-    return false;
+    /* Google Translate shares only the translation, so a Chinese→English
+       translation arrives as English. Search the dictionary backwards instead
+       of turning it away. Links are dropped; the first line is the query. */
+    const lines=String(text||"").replace(/https?:\/\/\S+/g," ").split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    const q=(lines[0]||"").slice(0,60);
+    if(!q){
+      await showDialog("No Chinese in that",
+        "Nothing that came "+how+" contained Chinese characters or any words to look up.",
+        [{label:"OK",value:1,kind:"safe"}]);
+      return false;
+    }
+    const id=await pickListFor("“"+q+"”");
+    if(!id)return false;
+    SET.lastList=id;saveSettings();
+    await openAdd(id,q,"Only the English came through. These are the Chinese words that match “"+q+"” — tap ＋ beside the one you saw.");
+    /* Good enough when some word's meaning IS the query. Otherwise a partial
+       match can mislead — "broccoli" alone finds only 甘蓝, Chinese broccoli —
+       so ask online, put that first, and keep the partial matches below it. */
+    const score=englishScorer(q);
+    const entryOf=hz=>wordEntry(hz)||(DICT&&DICT[hz]?[hz,DICT[hz][0],DICT[hz][1]]:null);
+    const exact=addHits.some(h=>{const e=entryOf(h.hz);return e&&score(e[1],e[2])===0;});
+    if(exact)return true;
+    const english=addHits.slice();
+    /* a phrase like "beef noodles": also show each word's best matches */
+    const parts=[];
+    const words=q.toLowerCase().replace(/[^a-z\s'-]/g," ").split(/\s+/).filter(x=>x.length>2&&!/^(the|and|with|for|of|in|on|to)$/.test(x));
+    if(words.length>1)words.forEach(wd=>searchAll(wd).slice(0,3).forEach(h=>parts.push({hz:h.hz,src:h.src+" · “"+wd+"”"})));
+    const show=(first,note)=>{
+      const seen={},merged=[];
+      first.concat(english,parts).forEach(h=>{if(!seen[h.hz]){seen[h.hz]=1;merged.push(h);}});
+      addHits=merged.slice(0,40);renderAddResults();
+      $("#add-note").textContent=note;
+    };
+    show([],SET.onlineLookup?"No word in the dictionary means exactly “"+q+"”. Looking it up online…"
+      :"No word in the dictionary means exactly “"+q+"”. The closest matches are below, or create the word yourself.");
+    const zh=await lookupChinese(q);
+    if(zh){
+      onlineGloss[zh]=q;
+      $("#add-input").value=zh;
+      show([{hz:zh,src:"online translation"}].concat(searchAll(zh)),"No word in the dictionary means exactly “"+q+"”, so "+zh+" at the top is an online translation — check it’s what you saw. Closer dictionary matches follow.");
+    }else if(SET.onlineLookup){
+      show([],"No word in the dictionary means exactly “"+q+"”, and the online lookup found nothing (offline?). "+((english.length||parts.length)?"The closest matches are below, or create":"You can create")+" the word yourself.");
+    }
+    return true;
   }
   let run=runs[0];
   if(runs.length>1){
