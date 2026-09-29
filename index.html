@@ -3012,7 +3012,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.12";
+const APP_VERSION="1.13";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -3711,14 +3711,16 @@ function durability(md){
   solidWords(md).forEach(hz=>{const lv=wordLevel(hz);if(rows[lv])rows[lv][durBand(BS[hz])]++;});
   return rows;
 }
-/* At risk: Solid, not waiting on a scheduled 1/3/6… review (those are already
-   booked), has a proven gap of at least a day, and it has now been longer than
-   that since you last answered it. */
+/* At risk: Solid, not waiting on one of its initial scheduled reviews (those
+   are already booked), has a proven gap of at least a day, and it is now at
+   least RISK_GRACE days past that gap. A day or two over is ordinary; four or
+   more is where it starts to matter. */
+const RISK_GRACE=4;
 function atRisk(md){
   const BS=rbest(md),RL=rlast(md),G=grad(md),now=Date.now();
   return solidWords(md).filter(hz=>!gradPending(G[hz])&&BS[hz]>=1&&RL[hz])
     .map(hz=>({hz,days:(now-RL[hz])/864e5,best:BS[hz]}))
-    .filter(o=>o.days>o.best)
+    .filter(o=>o.days-o.best>=RISK_GRACE)
     .sort((a,b)=>b.days/b.best-a.days/a.best);
 }
 function untested(md){
@@ -3774,15 +3776,15 @@ function renderStats(){
       ${nSolid?bars:`<div class="set-note">No Solid words in ${md} yet.</div>`}
       <div class="dur-tip" id="dur-tip">${nSolid?"Tap a segment for its count.":""}</div>
       ${nSolid?`<details><summary>Show the numbers</summary>${table}</details>`:""}
-      <div class="set-note">Each word's <b>proven gap</b> is the longest it has gone between reviews and still been remembered. It is recorded from version 1.8 on${tested?"":` — nothing in ${md} has been reviewed since then, so every word is still untested`}.</div>
+      <div class="set-note">A word's <b>proven gap</b> is the longest it has gone between reviews and still been remembered. “Not yet tested” means it hasn't been reviewed after a gap of a day or more yet${tested?"":` — nothing in ${md} has been, so far`}.</div>
     </div>
     <div class="st-card">
       <h3>Past their proven gap</h3>
-      <div class="st-hero"><b>${risk.length}</b><span>Solid word${risk.length===1?"":"s"} it's been longer since you reviewed<br>than ${risk.length===1?"it has":"they have"} ever lasted</span></div>
+      <div class="st-hero"><b>${risk.length}</b><span>Solid word${risk.length===1?"":"s"} now ${RISK_GRACE}+ days past<br>the longest ${risk.length===1?"it has":"they have"} ever lasted</span></div>
       ${risk.length?`<button class="risk-go" id="risk-go">Review ${risk.length===1?"it":"these "+risk.length} now</button>
         <div class="risk-list">${riskRows}</div>
         ${risk.length>40?`<div class="set-note">Showing the 40 most overdue.</div>`:""}`:""}
-      <div class="set-note">${unt?`${unt} more Solid word${unt===1?" hasn't":"s haven't"} been tested across a gap yet, so ${unt===1?"its":"their"} risk is unknown; the daily review will get to them. `:""}Words on their 1-3-6 schedule after being learned aren't counted — those reviews are already booked.</div>
+      <div class="set-note">${unt?`${unt} more Solid word${unt===1?" hasn't":"s haven't"} been tested across a gap yet, so ${unt===1?"its":"their"} risk is unknown; the daily review will get to them. `:""}Words still on their initial scheduled reviews aren't counted — those reviews are already booked.</div>
     </div>`;
   body.querySelectorAll("#st-seg button").forEach(b=>b.onclick=()=>{statsMode=b.dataset.md;renderStats();});
   body.querySelectorAll(".dur-bar .dseg").forEach(b=>b.onclick=()=>{
@@ -3808,12 +3810,18 @@ function renderHome(){
   const dueWords=new Set();parts.forEach(p=>p.words.forEach(hz=>dueWords.add(hz)));
   const dueTotal=dueWords.size;
   const anyScheduled=allDecks().some(dk=>dk.words.length&&reviewStatus(dk,homeMode).total>0);
+  /* recently learned words wait on their own initial scheduled reviews rather
+     than the daily draw — say so, or a small day looks like a fault */
+  const Gw=grad(homeMode),Rw=rmap(homeMode),nowW=Date.now();
+  const waiting=Object.keys(Gw).filter(hz=>Rw[hz]==="s"&&wordEntry(hz)&&gradPending(Gw[hz])&&!gradDue(Gw[hz],nowW)).length;
+  const waitLine=waiting?`<div class="from">${waiting} recently learned word${waiting===1?" is":"s are"} on ${waiting===1?"its":"their"} initial scheduled reviews and will come up on ${waiting===1?"its":"their"} own days.</div>`:"";
   if(dueTotal){
     const t=document.createElement("div");
     t.className="today";
     t.innerHTML=`<div class="lab">Today</div>
       <div class="big"><b>${dueTotal}</b><span>word${dueTotal===1?"":"s"} for review</span></div>
       <div class="from">${parts.map(p=>`${esc(p.label)} · ${p.words.length}`).join(" &nbsp;·&nbsp; ")}</div>
+      ${waitLine}
       <button class="go" id="today-go">Start today’s review</button>`;
     wrap.appendChild(t);
   }else if(anyScheduled){
@@ -3821,7 +3829,8 @@ function renderHome(){
     t.className="today done";
     t.innerHTML=`<div class="lab">Today</div>
       <div class="big"><b>✓</b><span>review complete</span></div>
-      <div class="from">A fresh set is drawn each day.</div>`;
+      <div class="from">A fresh set is drawn each day.</div>
+      ${waitLine}`;
     wrap.appendChild(t);
   }
 
@@ -3892,16 +3901,6 @@ function renderHome(){
     hidden=levels.length-vis.length;
     levels=vis;
   }
-  section("HSK levels");
-  levels.forEach(renderDeck);
-  if(hidden||SET.showAll){
-    const b=document.createElement("button");
-    b.className="showall";
-    b.textContent=SET.showAll?"Show fewer levels":`Show all levels (${hidden} more)`;
-    b.onclick=()=>{SET.showAll=!SET.showAll;saveSettings();renderHome();};
-    wrap.appendChild(b);
-  }
-
   /* ---- user lists ---- */
   section("My lists");
   const lists=userLists();
@@ -3917,6 +3916,16 @@ function renderHome(){
   nb.className="review-btn";nb.style.borderStyle="solid";nb.id="new-list";
   nb.textContent="＋ New list";
   wrap.appendChild(nb);
+
+  section("HSK levels");
+  levels.forEach(renderDeck);
+  if(hidden||SET.showAll){
+    const b=document.createElement("button");
+    b.className="showall";
+    b.textContent=SET.showAll?"Show fewer levels":`Show all levels (${hidden} more)`;
+    b.onclick=()=>{SET.showAll=!SET.showAll;saveSettings();renderHome();};
+    wrap.appendChild(b);
+  }
 
   /* ---- wiring ---- */
   const go=$("#today-go");
@@ -4888,7 +4897,7 @@ function settingsSpec(){
       {type:"toggle",t:"Show review history on cards",s:"The “3 reviews · 5d ago” note on the front of each card",
        get:()=>SET.showStats,set:v=>{SET.showStats=v;saveSettings();}}
     ]},
-    {title:"Daily review",note:"“Words for review” draws from words you have rated Solid, favouring the ones you have had to relearn and the ones you haven’t seen in a while, and passing over words you have got right many times running. Each deck offers up to its own number of words per day, capped by the share above.",
+    {title:"Daily review",note:"“Words for review” draws from words you have rated Solid, favouring the ones you have had to relearn and the ones you haven’t seen in a while, and passing over words you have got right many times running. Each deck offers up to its own number of words per day, capped by the share above. Words still on their initial scheduled reviews (below) aren’t drawn — they come up on their own days, in addition to these.",
      rows:allDecks().map(dk=>({
       type:"stepper",t:dk.name,s:"Words offered per day",min:1,max:200,step:5,
       get:()=>capFor(dk),set:v=>{SET.caps[dk.id]=v;saveSettings();invalidateDaily();}
@@ -4901,19 +4910,19 @@ function settingsSpec(){
        opts:[{v:0,label:"No limit"},{v:20,label:"20 days"},{v:30,label:"30 days"},{v:50,label:"50 days"},{v:75,label:"75 days"},{v:120,label:"120 days"}],
        get:()=>SET.maxGap,set:v=>{SET.maxGap=v;saveSettings();invalidateDaily();}}
      ])},
-    {title:"Newly learned words",note:"A word promoted to Solid is brought back on a fixed schedule before it joins the normal weighting, so it moves into long-term memory.",
+    {title:"Newly learned words",note:"When a word first becomes Solid it comes back on these days to fix it in long-term memory. After the last one it joins the daily review.",
      rows:[
-      {type:"choice",t:"Review schedule",s:"Days after a word first becomes Solid",val:()=>gradLabel(),
+      {type:"choice",t:"Initial scheduled reviews",s:"Days after a word first becomes Solid",val:()=>gradLabel(),
        opts:GRAD_PRESETS.map(p=>({v:p.v.join(","),label:p.label})).concat([{v:"__custom",label:"Custom…"}]),
        get:()=>gradDays().join(","),
        set:async v=>{
          if(v==="__custom"){
-           const txt=await showPrompt("Custom schedule",
+           const txt=await showPrompt("Initial scheduled reviews",
              "Days after a word becomes Solid, separated by commas. For example: 1, 3, 6, 10",
              gradDays().join(", "),"1, 3, 6, 10");
            if(txt==null)return;
            const nums=String(txt).split(/[^0-9]+/).filter(Boolean).map(Number).filter(n=>n>0&&n<=365);
-           if(!nums.length){await showDialog("Not a valid schedule","Enter one or more day numbers separated by commas, such as 1, 3, 6, 10.",[{label:"OK",value:1,kind:"safe"}]);return;}
+           if(!nums.length){await showDialog("Not a valid set of days","Enter one or more day numbers separated by commas, such as 1, 3, 6, 10.",[{label:"OK",value:1,kind:"safe"}]);return;}
            SET.gradDays=[...new Set(nums)].sort((a,b)=>a-b).slice(0,8);
          }else SET.gradDays=v?v.split(",").map(Number):[];
          saveSettings();invalidateDaily();renderSettings();renderHome();
