@@ -3139,7 +3139,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.16";
+const APP_VERSION="1.17";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -3886,7 +3886,7 @@ function startRiskReview(md){
   const cards=list.map(o=>wordEntry(o.hz)).filter(Boolean);
   if(!cards.length)return;
   navStack=[];
-  level=0;deckName="Past their proven gap";mode=md;reviewing="a";
+  level=0;deckName="Past their longest recall";mode=md;reviewing="a";
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
   deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
@@ -3932,7 +3932,7 @@ function renderStats(){
     const e=wordEntry(o.hz)||[o.hz,"",""];
     return `<div class="risk-row"><span class="h">${esc(o.hz)}</span>
       <span class="m"><b>${esc(e[1])}</b> ${esc(e[2])}</span>
-      <span class="d">${Math.floor(o.days)} d since<i>lasted ${Math.floor(o.best)} d</i></span></div>`;
+      <span class="d">${Math.floor(o.days)} d ago<i>longest recall ${Math.floor(o.best)} d</i></span></div>`;
   }).join("");
   body.innerHTML=`
     <div class="st-seg" id="st-seg">
@@ -3940,22 +3940,22 @@ function renderStats(){
       <button data-md="writing" class="${md==="writing"?"on":""}">写 Writing</button>
     </div>
     <div class="st-card">
-      <h3>How long your words last</h3>
-      <div class="st-hero"><b>${week}</b><span>Solid word${week===1?"":"s"} proven to last a week or more<br>of ${nSolid} Solid</span></div>
+      <h3>How long your words are remembered</h3>
+      <div class="st-hero"><b>${nSolid}</b><span>Solid word${nSolid===1?"":"s"};<br>${week} proven to last in memory for a week or more.</span></div>
       <div class="dur-legend">${DUR_BANDS.map((b,i)=>`<span><i class="${b.col?"":"dur-untested"}" style="${swatch(i)}"></i>${esc(b.label)}</span>`).join("")}</div>
       ${nSolid?bars:`<div class="set-note">No Solid words in ${md} yet.</div>`}
       <div class="dur-tip" id="dur-tip">${nSolid?"Tap a segment for its word count.":""}</div>
       <button class="seg-go" id="seg-go" style="display:none"></button>
       ${nSolid?`<details><summary>Show the numbers</summary>${table}</details>`:""}
-      <div class="set-note">A word's <b>proven gap</b> is the longest it has gone between reviews and still been remembered. “Not yet tested” means it hasn't been reviewed after a gap of a day or more yet${tested?"":` — nothing in ${md} has been, so far`}.</div>
+      <div class="set-note"><b>Longest recall:</b> the longest time between reviews after which a word was still recalled. <b>Not yet tested:</b> not yet reviewed after an interval of at least a day${tested?"":`; this applies to every word in ${md === "reading" ? "Reading" : "Writing"} so far`}.</div>
     </div>
     <div class="st-card">
-      <h3>Past their proven gap</h3>
-      <div class="st-hero"><b>${risk.length}</b><span>Solid word${risk.length===1?"":"s"} now ${riskGrace()}+ day${riskGrace()===1?"":"s"} past<br>the longest ${risk.length===1?"it has":"they have"} ever lasted</span></div>
-      ${risk.length?`<button class="risk-go" id="risk-go">Review ${risk.length===1?"it":"these "+risk.length} now</button>
+      <h3>Past their longest recall</h3>
+      <div class="st-hero"><b>${risk.length}</b><span>Solid word${risk.length===1?"":"s"} ${riskGrace()} or more day${riskGrace()===1?"":"s"}<br>beyond ${risk.length===1?"its":"their"} longest recall</span></div>
+      ${risk.length?`<button class="risk-go" id="risk-go">Review ${risk.length===1?"this word":"these "+risk.length+" words"}</button>
         <div class="risk-list">${riskRows}</div>
         ${risk.length>40?`<div class="set-note">Showing the 40 most overdue.</div>`:""}`:""}
-      <div class="set-note">${unt?`${unt} more Solid word${unt===1?" hasn't":"s haven't"} been tested across a gap yet, so ${unt===1?"its":"their"} risk is unknown; the daily review will get to them. `:""}Words still on their initial scheduled reviews aren't counted — those reviews are already booked.</div>
+      <div class="set-note">Not included: words still on their initial scheduled reviews${unt?`, and ${unt} Solid word${unt===1?"":"s"} not yet tested`:""}.</div>
     </div>`;
   body.querySelectorAll("#st-seg button").forEach(b=>b.onclick=()=>{statsMode=b.dataset.md;renderStats();});
   body.querySelectorAll(".dur-bar .dseg").forEach(b=>b.onclick=()=>{
@@ -4013,7 +4013,7 @@ function renderHome(){
   if(riskN){
     const r=document.createElement("button");
     r.className="risk-link";r.id="risk-link";
-    r.innerHTML=`<span><b>${riskN}</b> word${riskN===1?"":"s"} past ${riskN===1?"its":"their"} proven gap</span><span class="chev">›</span>`;
+    r.innerHTML=`<span><b>${riskN}</b> word${riskN===1?"":"s"} past ${riskN===1?"its":"their"} longest recall</span><span class="chev">›</span>`;
     r.onclick=openStats;
     wrap.appendChild(r);
   }
@@ -5086,7 +5086,7 @@ function settingsSpec(){
        val:()=>SET.maxGap?SET.maxGap+" days":"No limit",
        opts:[{v:0,label:"No limit"},{v:20,label:"20 days"},{v:30,label:"30 days"},{v:50,label:"50 days"},{v:75,label:"75 days"},{v:120,label:"120 days"}],
        get:()=>SET.maxGap,set:v=>{SET.maxGap=v;saveSettings();invalidateDaily();}},
-      {type:"choice",t:"At risk after",s:"How far past its proven gap a word must be before the Progress screen flags it",
+      {type:"choice",t:"At risk after",s:"Days beyond a word’s longest recall before it is flagged on the Progress screen",
        val:()=>riskGrace()+" day"+(riskGrace()===1?"":"s"),
        opts:[1,2,3,4,5,7,10,14].map(n=>({v:n,label:n+" day"+(n===1?"":"s")+(n===3?" (default)":"")})),
        get:()=>riskGrace(),set:v=>{SET.riskGrace=v;saveSettings();renderHome();}}
