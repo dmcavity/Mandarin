@@ -3149,7 +3149,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.19";
+const APP_VERSION="1.20";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -3470,7 +3470,11 @@ function reviewList(deck,md){
      sample; due scheduled reviews are added on top so they are never skipped. */
   const levelCap=capFor(deck);
   const cap=Math.max(1,Math.min(levelCap,Math.floor(solid.length*(SET.pct/100))));
-  const slots=Math.max(0,cap-due.length-keep.length);
+  /* after "Apply today", words already reviewed today use up slots — but only
+     the ones that were drawn; scheduled reviews were on top of the cap, so they
+     don't count against it */
+  const keptDrawn=keep.filter(hz=>!(keepMeta[hz]&&keepMeta[hz][0]==="sched")).length;
+  const slots=Math.max(0,cap-due.length-keptDrawn);
   /* Starvation floor: a lottery has a long tail, and without this a word can
      sit untouched for months purely by chance. Anything past the limit is put
      in by hand, oldest first — but never more than half the day's slots, so a
