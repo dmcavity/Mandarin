@@ -236,6 +236,13 @@ body{
 .set-step button:disabled{opacity:.35;cursor:default}
 .set-step .n{min-width:30px;text-align:center;font-size:14px;font-weight:700;color:var(--ink)}
 .set-note{font-size:11.5px;color:var(--sand);line-height:1.5;margin:8px 3px 0}
+.set-pending{display:none}
+.set-pending.on,.set-pending.done{display:flex;align-items:center;gap:10px;margin-top:8px;padding:9px 11px;
+  border:1px solid var(--line);border-left:3px solid var(--jade);border-radius:10px;background:var(--card)}
+.pend-txt{flex:1;min-width:0;font-size:12px;color:var(--ink);line-height:1.45}
+.pend-btn{flex:0 0 auto;padding:7px 11px;border-radius:8px;border:1px solid var(--jade);background:transparent;
+  color:var(--jade);font-size:12.5px;font-weight:700;font-family:var(--ui-font);cursor:pointer}
+.pend-btn:active{background:var(--jade);color:#fff}
 .set-row .voice-row{margin-top:0;width:100%}
 .modal-input{width:100%;padding:10px 11px;border-radius:9px;border:1px solid var(--line);background:var(--paper);
   color:var(--ink);font-size:14px;font-family:var(--ui-font);margin-bottom:14px}
@@ -360,6 +367,9 @@ body{
 .st-hero{display:flex;align-items:baseline;gap:9px;margin-top:6px}
 .st-hero b{font-size:32px;line-height:1;color:var(--ink)}
 .st-hero span{font-size:13px;color:var(--sand);line-height:1.35}
+.st-pair{display:grid;grid-template-columns:auto 1fr;column-gap:10px;row-gap:6px;align-items:baseline;margin-top:8px}
+.st-pair b{font-size:32px;line-height:1;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+.st-pair span{font-size:13px;color:var(--sand);line-height:1.35}
 .dur-legend{display:flex;flex-wrap:wrap;gap:6px 12px;margin:14px 0 10px}
 .dur-legend span{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--sand)}
 .dur-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
@@ -3039,7 +3049,7 @@ let homeMode="reading";                                    // mode toggle on the
      re  1 when this re-answers a card already answered in the same pass
      pr  learning prior before     gs  which initial scheduled review this was (0,1,…), null if none
      dc  times demoted from Solid before this answer     dl  days since the last demotion
-     ix, n  position in the session and session length     tz  time-zone offset (minutes)
+     ix, n  position in the session and session length     tz  time-zone offset (minutes)     o  the word's rating in the other mode
      pk, pw  for daily review: how the word was chosen (sched = initial scheduled review,
              floor = longest-gap rule, draw = weighted draw) and its draw weight
    A reset writes a marker {t, k:"reset", d} instead of deleting history. */
@@ -3139,7 +3149,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.17";
+const APP_VERSION="1.19";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -3194,7 +3204,59 @@ function applySettings(o){
 }
 /* Review settings change what today's list should have been, so the cached
    daily sample is dropped and rebuilt the next time it is asked for. */
-function invalidateDaily(){if(store.daily){delete store.daily;saveStore();}}
+/* Daily-review settings take effect from tomorrow: today's lists are kept, so a
+   change made part-way through the day never resets a review already under way.
+   Each list is stamped with the settings it was drawn under; where those differ
+   from the current ones, a notice in Settings offers to apply them today. */
+function dailySig(deck){return [capFor(deck),SET.pct,SET.maxGap|0,gradDays().join(",")].join("|");}
+function deckForKey(k){
+  const i=k.lastIndexOf("-"),id=k.slice(0,i);
+  return allDecks().find(d=>String(d.id)===id)||null;
+}
+/* today's lists whose settings no longer match */
+function staleDailyKeys(){
+  const t=todayStr();
+  return Object.keys(store.daily||{}).filter(k=>{
+    const rec=store.daily[k];
+    if(!rec||rec.d!==t||rec.rb||!rec.sg)return false;
+    const dk=deckForKey(k);
+    return !!dk&&rec.sg!==dailySig(dk);
+  });
+}
+/* lists made before stamping existed take the settings as they stand when
+   Settings is opened, which is before anything there can be changed */
+function stampDaily(){
+  const t=todayStr();let ch=false;
+  for(const k of Object.keys(store.daily||{})){
+    const rec=store.daily[k],dk=deckForKey(k);
+    if(rec&&rec.d===t&&!rec.sg&&!rec.rb&&dk){rec.sg=dailySig(dk);ch=true;}
+  }
+  if(ch)saveStore();
+}
+let dailyGroup="Daily review";
+function markDailyChanged(group){dailyGroup=group;updateDailyNotice();}
+function applyDailyToday(){
+  for(const k of staleDailyKeys()){
+    const rec=store.daily[k],done=(rec.done||[]).slice();
+    store.daily[k]={d:rec.d,rb:1,w:done.slice(),done,m:rec.m||{}};
+  }
+  saveStore();
+}
+function updateDailyNotice(){
+  document.querySelectorAll(".set-pending").forEach(el=>{
+    const on=staleDailyKeys().length>0&&dailyGroup===el.dataset.group;
+    el.innerHTML=on?`<div class="pend-txt">Today’s lists are unchanged. The new setting applies from tomorrow.</div>
+      <button class="pend-btn" type="button">Apply today</button>`:"";
+    el.classList.toggle("on",on);el.classList.remove("done");
+    const b=el.querySelector(".pend-btn");
+    if(b)b.onclick=()=>{
+      applyDailyToday();
+      el.innerHTML=`<div class="pend-txt">Applied to today’s lists. Words already reviewed today still count.</div>`;
+      el.classList.add("done");
+      renderHome();
+    };
+  });
+}
 let sess={s:0,t:0,n:0},given=[],snap=[];                   // given[i] = rating already recorded for deck[i]
                                                            // snap[i]  = that word's state before it was first answered
 let canvases=[],revealMode=null,drawLocked=false,eraseMode=false,answeredThisCard=false;
@@ -3368,19 +3430,25 @@ function reviewList(deck,md){
   const solid=words.filter(v=>R[v[0]]==="s").map(v=>v[0]);
   store.daily=store.daily||{};
   const key=deck.id+"-"+md,today=todayStr(),cached=store.daily[key];
-  if(cached&&cached.d===today){
+  if(cached&&cached.d===today&&!cached.rb){
     const done=cached.done||[];
     return cached.w.filter(hz=>R[hz]==="s"&&!done.includes(hz));
   }
+  /* rb = "rebuild": settings were applied to today's list part-way through the
+     day. Words already reviewed today stay counted as done; the rest of the
+     list is drawn afresh under the new settings. */
+  const keep=(cached&&cached.d===today&&cached.rb)?(cached.done||[]).slice():[];
+  const keepMeta=keep.length?Object.assign({},cached.m||{}):{};
+  const kset=new Set(keep);
   if(!solid.length){delete store.daily[key];return [];}
   const RL=rlast(md),ST=rstreak(md),LP=rlapse(md),PR=rprior(md),SR=rsolid(md),now=Date.now();
   const G=grad(md);
   /* words with a scheduled review that has come due — always included, most
      overdue first; they are not left to chance */
-  const due=solid.filter(hz=>gradDue(G[hz],now)).sort((a,b)=>gradDueAt(G[a])-gradDueAt(G[b]));
+  const due=solid.filter(hz=>!kset.has(hz)&&gradDue(G[hz],now)).sort((a,b)=>gradDueAt(G[a])-gradDueAt(G[b]));
   /* words still waiting on a scheduled review are held back from the random
      pool so an early random pick can't waste their slot */
-  const pool=solid.filter(hz=>!gradPending(G[hz]));
+  const pool=solid.filter(hz=>!kset.has(hz)&&!gradPending(G[hz]));
   const n=pool.length;
   /* days since this word was last answered; a word from before timestamps were
      kept counts as 10 days — stale enough to weight, not old enough to force */
@@ -3402,7 +3470,7 @@ function reviewList(deck,md){
      sample; due scheduled reviews are added on top so they are never skipped. */
   const levelCap=capFor(deck);
   const cap=Math.max(1,Math.min(levelCap,Math.floor(solid.length*(SET.pct/100))));
-  const slots=Math.max(0,cap-due.length);
+  const slots=Math.max(0,cap-due.length-keep.length);
   /* Starvation floor: a lottery has a long tail, and without this a word can
      sit untouched for months purely by chance. Anything past the limit is put
      in by hand, oldest first — but never more than half the day's slots, so a
@@ -3425,10 +3493,11 @@ function reviewList(deck,md){
      answer, so a new review model can later be judged fairly against this one */
   const wOf=hz=>Math.round(diffW(hz)*staleW(hz)*decayW(hz)*1e4)/1e4;
   const meta={};
+  keep.forEach(hz=>{if(keepMeta[hz])meta[hz]=keepMeta[hz];});
   due.forEach(hz=>meta[hz]=["sched",null]);
   forced.forEach(hz=>meta[hz]=["floor",wOf(hz)]);
   sample.forEach(hz=>meta[hz]=["draw",wOf(hz)]);
-  store.daily[key]={d:today,w:pick,done:[],m:meta,np:n,sl:slots};
+  store.daily[key]={d:today,w:keep.concat(pick),done:keep,m:meta,np:n,sl:slots,sg:dailySig(deck)};
   saveStore();
   return pick;
 }
@@ -3941,7 +4010,10 @@ function renderStats(){
     </div>
     <div class="st-card">
       <h3>How long your words are remembered</h3>
-      <div class="st-hero"><b>${nSolid}</b><span>Solid word${nSolid===1?"":"s"};<br>${week} proven to last in memory for a week or more.</span></div>
+      <div class="st-pair">
+        <b>${nSolid}</b><span>Solid word${nSolid===1?"":"s"}</span>
+        <b>${week}</b><span>recalled after a week or more</span>
+      </div>
       <div class="dur-legend">${DUR_BANDS.map((b,i)=>`<span><i class="${b.col?"":"dur-untested"}" style="${swatch(i)}"></i>${esc(b.label)}</span>`).join("")}</div>
       ${nSolid?bars:`<div class="set-note">No Solid words in ${md} yet.</div>`}
       <div class="dur-tip" id="dur-tip">${nSolid?"Tap a segment for its word count.":""}</div>
@@ -5074,24 +5146,24 @@ function settingsSpec(){
       {type:"toggle",t:"Show review history on cards",s:"The “3 reviews · 5d ago” note on the front of each card",
        get:()=>SET.showStats,set:v=>{SET.showStats=v;saveSettings();}}
     ]},
-    {title:"Daily review",note:"“Words for review” draws from words you have rated Solid, favouring the ones you have had to relearn and the ones you haven’t seen in a while, and passing over words you have got right many times running. Each deck offers up to its own number of words per day, capped by the share above. Words still on their initial scheduled reviews (below) aren’t drawn — they come up on their own days, in addition to these.",
+    {title:"Daily review",daily:true,note:"“Words for review” draws from words you have rated Solid, favouring the ones you have had to relearn and the ones you haven’t seen in a while, and passing over words you have got right many times running. Each deck offers up to its own number of words per day, capped by the share above. Words still on their initial scheduled reviews (below) aren’t drawn — they come up on their own days, in addition to these.",
      rows:allDecks().map(dk=>({
       type:"stepper",t:dk.name,s:"Words offered per day",min:1,max:200,step:5,
-      get:()=>capFor(dk),set:v=>{SET.caps[dk.id]=v;saveSettings();invalidateDaily();}
+      get:()=>capFor(dk),set:v=>{SET.caps[dk.id]=v;saveSettings();markDailyChanged("Daily review");}
      })).concat([
       {type:"stepper",t:"Share of Solid words",s:"Upper limit as a percentage of that level’s Solid pile",
        min:5,max:100,step:5,suffix:"%",
-       get:()=>SET.pct,set:v=>{SET.pct=v;saveSettings();invalidateDaily();}},
+       get:()=>SET.pct,set:v=>{SET.pct=v;saveSettings();markDailyChanged("Daily review");}},
       {type:"choice",t:"Longest gap allowed",s:"A word left this long is put into the list by hand, rather than waiting on chance",
        val:()=>SET.maxGap?SET.maxGap+" days":"No limit",
        opts:[{v:0,label:"No limit"},{v:20,label:"20 days"},{v:30,label:"30 days"},{v:50,label:"50 days"},{v:75,label:"75 days"},{v:120,label:"120 days"}],
-       get:()=>SET.maxGap,set:v=>{SET.maxGap=v;saveSettings();invalidateDaily();}},
+       get:()=>SET.maxGap,set:v=>{SET.maxGap=v;saveSettings();markDailyChanged("Daily review");}},
       {type:"choice",t:"At risk after",s:"Days beyond a word’s longest recall before it is flagged on the Progress screen",
        val:()=>riskGrace()+" day"+(riskGrace()===1?"":"s"),
        opts:[1,2,3,4,5,7,10,14].map(n=>({v:n,label:n+" day"+(n===1?"":"s")+(n===3?" (default)":"")})),
        get:()=>riskGrace(),set:v=>{SET.riskGrace=v;saveSettings();renderHome();}}
      ])},
-    {title:"Newly learned words",note:"When a word first becomes Solid it comes back on these days to fix it in long-term memory. After the last one it joins the daily review.",
+    {title:"Newly learned words",daily:true,note:"When a word first becomes Solid it comes back on these days to fix it in long-term memory. After the last one it joins the daily review.",
      rows:[
       {type:"choice",t:"Initial scheduled reviews",s:"Days after a word first becomes Solid",val:()=>gradLabel(),
        opts:GRAD_PRESETS.map(p=>({v:p.v.join(","),label:p.label})).concat([{v:"__custom",label:"Custom…"}]),
@@ -5106,7 +5178,7 @@ function settingsSpec(){
            if(!nums.length){await showDialog("Not a valid set of days","Enter one or more day numbers separated by commas, such as 1, 3, 6, 10.",[{label:"OK",value:1,kind:"safe"}]);return;}
            SET.gradDays=[...new Set(nums)].sort((a,b)=>a-b).slice(0,8);
          }else SET.gradDays=v?v.split(",").map(Number):[];
-         saveSettings();invalidateDaily();renderSettings();renderHome();
+         saveSettings();markDailyChanged("Newly learned words");renderSettings();renderHome();
        }}
     ]},
     {title:"Pronunciation",rows:[{type:"custom",id:"voice-row",cls:"voice-row"}],
@@ -5158,6 +5230,7 @@ function renderSettings(){
     <div class="set-group">
       <div class="set-group-title">${esc(g.title)}</div>
       <div class="set-list">${g.rows.map((r,ri)=>rowHTML(r,gi,ri)).join("")}</div>
+      ${g.daily?`<div class="set-pending" data-group="${esc(g.title)}"></div>`:""}
       ${g.note?`<div class="set-note">${esc(g.note)}</div>`:""}
     </div>`).join("");
 
@@ -5201,8 +5274,9 @@ function renderSettings(){
     }
   }));
   renderVoicePicker();
+  updateDailyNotice();
 }
-$("#gear-btn").onclick=()=>{renderSettings();show("scr-settings");};
+$("#gear-btn").onclick=()=>{stampDaily();dailyGroup="Daily review";renderSettings();show("scr-settings");};
 $("#stats-btn").onclick=openStats;
 $("#credits-back").onclick=()=>{renderSettings();show("scr-settings");};
 $("#stats-back").onclick=()=>{renderHome();show("scr-home");};
@@ -5293,6 +5367,14 @@ function startSession(deckId,md,filter){
   }
   if(!cards.length){alert("No cards in this group — nice work!");return;}
   if(shuffleOn)cards=[...cards].sort(()=>Math.random()-0.5);
+  /* In a Tentative or Not learned pass, words already Solid in the other mode
+     come first: reading a word you can write (or writing one you can read) is
+     the quick win, and otherwise those words are lost among the new ones.
+     The sort is stable, so each group keeps its shuffled order. */
+  if(filter==="n"||filter==="t"){
+    const O=rmap(md==="reading"?"writing":"reading");
+    cards=cards.slice().sort((a,b)=>(O[b[0]]==="s")-(O[a[0]]==="s"));
+  }
   if(SET.maxCards&&filter!=="x"&&cards.length>SET.maxCards)cards=cards.slice(0,SET.maxCards);
   deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
   show("scr-card");renderCard();
@@ -5971,6 +6053,7 @@ function answer(r){
     dl:was.dm&&was.dm.length?Math.round((now-was.dm[was.dm.length-1])/864e5*100)/100:null,
     ix:idx,n:deck.length,
     tz:new Date(now).getTimezoneOffset(),
+    o:rmap(mode==="reading"?"writing":"reading")[hz]||"",
     ...(reviewing==="x"?(m=>m?{pk:m[0],pw:m[1]}:{})(pickMeta(hz)):{})});
   sess[r]++;
   saveStore();
