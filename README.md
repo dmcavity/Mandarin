@@ -15,7 +15,7 @@ A Mandarin flashcard app for reading and writing the 1,208 words of HSK levels 1
 - **Progress.** A chart of how long your Solid words are remembered, grouped by each word's longest recall: the longest gap between reviews after which you still recalled it. A list shows words that have gone past their longest recall. Tap any part of the chart to review those words.
 - **Your own lists and words.** Make lists for a textbook chapter, a topic or anything else, and add words that aren't in HSK 1–4. Progress on a word is shared between your list and its HSK deck.
 - **Add words from other apps** (Android). Share a word from Google Translate, a browser or any other app to the app, or copy it and use the **Paste** button on the add-word screen. If only English text arrives, the app looks up the Chinese.
-- **Search** by English or pinyin.
+- **Search** by English, pinyin or characters. Words that aren't in the app can be added to a list straight from the dictionary; if a word isn't there either, the app can translate it online or link to MDBG and Google Translate.
 - **Pronunciation** using the Chinese voices installed on your device.
 - **Character breakdowns** show each part of a character with its pinyin and meaning, and whether it gives the character its meaning or its sound. Breakdowns cover about 9,500 characters, including those in words you add.
 - **Example sentences** for HSK words.

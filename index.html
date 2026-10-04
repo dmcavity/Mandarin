@@ -95,6 +95,20 @@ body{
 .search-hit .sh-en{font-size:13px;color:var(--ink);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .search-hit .sh-lv{font-size:10.5px;color:#fff;background:var(--cinnabar);border-radius:5px;padding:2px 6px;flex:0 0 auto}
 .search-empty{padding:12px;font-size:13px;color:var(--sand);text-align:center}
+.search-hit .sh-lv.own{background:var(--jade)}
+.search-hit .sh-lv{max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-sec{padding:8px 12px 6px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--sand);
+  border-bottom:1px solid var(--line);background:var(--paper)}
+.search-hit.dict .sh-add{font-size:11.5px;font-weight:700;color:var(--jade);border:1px solid var(--jade);border-radius:6px;padding:2px 7px;flex:0 0 auto}
+.search-more{padding:12px;text-align:center;border-top:1px solid var(--line)}
+.search-more:first-child{border-top:none}
+.search-more.slim{padding:9px 12px}
+.sm-msg{font-size:13px;color:var(--ink);margin-bottom:10px}
+.sm-btn{display:block;width:100%;padding:9px 10px;border-radius:9px;border:1px solid var(--jade);background:transparent;color:var(--jade);
+  font-size:13.5px;font-weight:700;font-family:var(--ui-font);cursor:pointer;margin-bottom:10px}
+.sm-links{font-size:12px;color:var(--sand)}
+.sm-links a{color:var(--cinnabar);font-weight:600;text-decoration:none}
+.sm-tip{font-size:11.5px;color:var(--sand);margin-top:8px;line-height:1.45}
 .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:14px 2px 4px}
 .toggle-row span{font-size:14px;color:var(--sand)}
 .switch{position:relative;width:46px;height:26px;background:#DDD5C4;border-radius:13px;transition:.2s;border:none;cursor:pointer}
@@ -444,7 +458,7 @@ body{
     <button data-md="writing"><span class="zi">写</span> Writing</button>
   </div>
   <div class="search-box">
-    <input type="text" id="search-input" placeholder="🔍 Search a word (English or pinyin)…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <input type="text" id="search-input" placeholder="🔍 Search: English, pinyin or 汉字…" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div id="search-results"></div>
   </div>
   <div id="levels"></div>
@@ -3166,7 +3180,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.21";
+const APP_VERSION="1.22";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -4937,7 +4951,7 @@ async function receiveText(text,how){
     const id=await pickListFor("“"+q+"”");
     if(!id)return false;
     SET.lastList=id;saveSettings();
-    await openAdd(id,q,"Only the English came through. These are the Chinese words that match “"+q+"” — tap ＋ beside the one you saw.");
+    await openAdd(id,q,(how==="search"?"":"Only the English came through. ")+"These are the Chinese words that match “"+q+"” — tap ＋ beside the one you "+(how==="search"?"want.":"saw."));
     /* Good enough when some word's meaning IS the query. Otherwise a partial
        match can mislead — "broccoli" alone finds only 甘蓝, Chinese broccoli —
        so ask online, put that first, and keep the partial matches below it. */
@@ -4979,7 +4993,9 @@ async function receiveText(text,how){
   const id=await pickListFor(run);
   if(!id)return false;
   SET.lastList=id;saveSettings();
-  const note=run.length>1
+  const note=(how==="search"&&!wordEntry(run)&&!(DICT&&DICT[run]))
+    ? "Tap ＋ to add "+run+". It isn’t in the dictionary, so tap the word afterwards to fill in its pinyin and meaning — that form can look the meaning up online."
+    : run.length>1
     ? "Tap ＋ beside the one you want. Words found inside “"+run+"” are listed too."
     : "Tap ＋ to add it. Tap the word itself to change its meaning first.";
   await openAdd(id,run,note);
@@ -5308,23 +5324,102 @@ let searchQuery="";
 function normalizeSearch(s){
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g,"");
 }
+/* Search covers the app's words (HSK and your own) first, then the dictionary,
+   and — when a word is in neither — offers to add it anyway or look it up
+   elsewhere. Matching and ranking are shared with the add-word screen. */
+let searchToken=0;
+function listsOf(hz){return userLists().filter(L=>(L.words||[]).indexOf(hz)>=0).map(L=>L.name);}
+function hitLabel(hz){
+  const ls=listsOf(hz);
+  const base=VIDX[hz]?"HSK "+VIDX[hz][3]:"your word";
+  return ls.length?base+" · "+ls.slice(0,2).join(", ")+(ls.length>2?" +"+(ls.length-2):""):base;
+}
+function lookupLinks(q){
+  const e=encodeURIComponent(q),han=/[一-鿿]/.test(q);
+  const L=[["MDBG","https://www.mdbg.net/chinese/dictionary?page=worddict&wdrst=0&wdqb="+e],
+           ["Google Translate","https://translate.google.com/?sl=auto&tl="+(han?"en":"zh-CN")+"&text="+e+"&op=translate"]];
+  if(han)L.push(["Wiktionary","https://en.wiktionary.org/wiki/"+e]);
+  return L.map(([t,u])=>`<a href="${u}" target="_blank" rel="noopener">${t}</a>`).join(" · ");
+}
 function runSearch(q){
   const box=$("#search-results");
-  const nq=normalizeSearch(q);
-  if(!nq){box.style.display="none";box.innerHTML="";return;}
-  const pool=allWordEntries();
-  const matches=pool.filter(v=>normalizeSearch(v[2]).includes(nq)||normalizeSearch(v[1]).includes(nq)).slice(0,25);
-  box.innerHTML=matches.length?matches.map(v=>`
-      <button class="search-hit" data-hz="${v[0]}" data-lv="${v[3]}">
-        <span class="sh-hz">${v[0]}</span>
-        <span class="sh-py">${v[1]}</span>
-        <span class="sh-en">${v[2]}</span>
-        <span class="sh-lv">HSK${v[3]}</span>
-      </button>`).join(""):`<div class="search-empty">No matches</div>`;
+  if(!normalizeSearch(q)){box.style.display="none";box.innerHTML="";return;}
+  const tok=++searchToken;
+  renderSearch(q);
+  if(!DICT)loadDict().then(()=>{if(tok===searchToken)renderSearch(q);});
+}
+function renderSearch(q){
+  const box=$("#search-results");
+  const raw=String(q||"").trim();
+  if(!raw){box.style.display="none";box.innerHTML="";return;}
+  const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  let hits=searchAll(raw);
+  /* a phrase like "dumpling soup" that matches nothing whole: each word's best matches */
+  let byWord=false;
+  if(!hits.some(x=>wordEntry(x.hz)||(DICT&&DICT[x.hz]))&&!/[一-鿿]/.test(raw)){
+    const words=raw.toLowerCase().replace(/[^a-z\s'-]/g," ").split(/\s+/).filter(x=>x.length>2&&!/^(the|and|with|for|of|in|on|to)$/.test(x));
+    if(words.length>1){
+      const seen={};hits=[];
+      words.forEach(wd=>searchAll(wd).slice(0,4).forEach(x=>{if(!seen[x.hz]){seen[x.hz]=1;hits.push(x);}}));
+      byWord=hits.length>0;
+    }
+  }
+  const app=hits.filter(h=>wordEntry(h.hz)).slice(0,25);
+  const dict=hits.filter(h=>!wordEntry(h.hz)&&DICT&&DICT[h.hz]).slice(0,8);
+  const han=/[一-鿿]/.test(raw);
+  /* the exact word typed, when it's characters, isn't anywhere yet */
+  const unknownHan=han&&/^[一-鿿]+$/.test(raw)&&!wordEntry(raw)&&!(DICT&&DICT[raw]);
+  const none=!app.length&&!dict.length;
+  let h="";
+  if(byWord)h+=`<div class="search-sec">No match for the whole phrase — matches for each word</div>`;
+  h+=app.map(v=>{const e=wordEntry(v.hz);return `
+      <button class="search-hit" data-hz="${esc(e[0])}" data-lv="${e[3]}">
+        <span class="sh-hz">${e[0]}</span>
+        <span class="sh-py">${esc(e[1])}</span>
+        <span class="sh-en">${esc(e[2])}</span>
+        <span class="sh-lv${VIDX[e[0]]?"":" own"}">${esc(hitLabel(e[0]))}</span>
+      </button>`;}).join("");
+  if(dict.length){
+    h+=`<div class="search-sec">${app.length||byWord?"More in the dictionary":"In the dictionary"} — tap to add to a list</div>`;
+    h+=dict.map(v=>{const d=DICT[v.hz];return `
+      <button class="search-hit dict" data-add="${esc(v.hz)}">
+        <span class="sh-hz">${v.hz}</span>
+        <span class="sh-py">${esc(d[0])}</span>
+        <span class="sh-en">${esc(d[1])}</span>
+        <span class="sh-add">＋ List</span>
+      </button>`;}).join("");
+  }
+  if(!DICT)h+=`<div class="search-empty">Searching the dictionary…</div>`;
+  else if(none||unknownHan||byWord){
+    h+=`<div class="search-more">
+      <div class="sm-msg">${none?`“${esc(raw)}” isn’t in the app or its dictionary.`:byWord?`None of these is “${esc(raw)}”?`:`${esc(raw)} itself isn’t in the dictionary.`}</div>
+      <button class="sm-btn" type="button" id="sm-add">＋ Add “${esc(raw)}” to a list${!han&&SET.onlineLookup?" (translates it online)":""}</button>
+      <div class="sm-links">Look it up: ${lookupLinks(raw)}</div>
+      <div class="sm-tip">Found it elsewhere? Copy the characters, paste them into this search box, and add them from here.</div>
+    </div>`;
+  }else{
+    h+=`<div class="search-more slim"><div class="sm-links">Not here? Look it up: ${lookupLinks(raw)}</div></div>`;
+  }
+  box.innerHTML=h;
   box.style.display="block";
-  box.querySelectorAll(".search-hit").forEach(btn=>{
+  box.querySelectorAll(".search-hit[data-hz]").forEach(btn=>{
     btn.onclick=()=>{navStack=[];startSearchCard(btn.dataset.hz,+btn.dataset.lv);};
   });
+  box.querySelectorAll(".search-hit[data-add]").forEach(btn=>{
+    btn.onclick=()=>addFromSearch(btn.dataset.add);
+  });
+  const sa=box.querySelector("#sm-add");
+  if(sa)sa.onclick=()=>receiveText(raw,"search");
+}
+/* a dictionary word straight into a list, without leaving the search */
+async function addFromSearch(hz){
+  const id=await pickListFor(hz);
+  if(!id)return;
+  SET.lastList=id;saveSettings();
+  curList=id;
+  addWordToList(hz,true);
+  renderSearch($("#search-input").value);
+  renderHome();
 }
 $("#search-input").oninput=e=>{searchQuery=e.target.value;runSearch(searchQuery);};
 /* Looking a word up mid-session shouldn't lose your place, so the session
