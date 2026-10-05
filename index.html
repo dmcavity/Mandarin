@@ -3249,7 +3249,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.24";
+const APP_VERSION="1.25";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -4185,8 +4185,17 @@ function renderHome(){
   /* recently learned words wait on their own initial scheduled reviews rather
      than the daily draw — say so, or a small day looks like a fault */
   const Gw=grad(homeMode),Rw=rmap(homeMode),nowW=Date.now();
-  const waiting=Object.keys(Gw).filter(hz=>Rw[hz]==="s"&&wordEntry(hz)&&gradPending(Gw[hz])&&!gradDue(Gw[hz],nowW)).length;
-  const waitLine=waiting?`<div class="from">${waiting} recently learned word${waiting===1?" is":"s are"} on ${waiting===1?"its":"their"} initial scheduled reviews and will come up on ${waiting===1?"its":"their"} own days.</div>`:"";
+  /* recently learned words on their initial scheduled reviews, and how many of
+     them are in today's review (they come up on their own days, on top of the
+     daily draw) — say so, or a small or large day looks like a fault */
+  const sched=Object.keys(Gw).filter(hz=>Rw[hz]==="s"&&wordEntry(hz)&&gradPending(Gw[hz]));
+  const nSched=sched.length,nIn=sched.filter(hz=>dueWords.has(hz)).length;
+  const pl=(n,one,many)=>n===1?one:many;
+  const waitLine=!nSched?"":`<div class="from">${
+    nIn===0?`None of the ${nSched} recently learned word${pl(nSched,"",'s')} on ${pl(nSched,"its","their")} initial scheduled reviews ${pl(nSched,"is","are")} due today.`
+    :nIn===nSched?`Includes ${nSched===1?"the 1":"all "+nSched} recently learned word${pl(nSched,"",'s')} on ${pl(nSched,"its","their")} initial scheduled reviews.`
+    :`Includes ${nIn} of ${nSched} recently learned words on their initial scheduled reviews.`}</div>`;
+  const doneLine=!nSched?"":`<div class="from">${nSched} recently learned word${pl(nSched," is","s are")} on ${pl(nSched,"its","their")} initial scheduled reviews.</div>`;
   if(dueTotal){
     const t=document.createElement("div");
     t.className="today";
@@ -4202,7 +4211,7 @@ function renderHome(){
     t.innerHTML=`<div class="lab">Today</div>
       <div class="big"><b>✓</b><span>review complete</span></div>
       <div class="from">A fresh set is drawn each day.</div>
-      ${waitLine}`;
+      ${doneLine}`;
     wrap.appendChild(t);
   }
 
