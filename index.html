@@ -3143,6 +3143,75 @@ async function mergeLog(events){
 /* One-off: rebuild each word's demotion dates from the history already logged.
    A re-answer (re=1) replaces the answer before it, exactly as it did in the app.
    Merged by timestamp, so it is safe to run again or alongside new answers. */
+/* Repair for a glitch fixed in v1.24. Looking up another word mid-session (the
+   字 panel's ↗) and coming back could make the next answer start from the
+   looked-up word's state instead of the card's own. When that word wasn't Solid,
+   a word that already was Solid got put back on its initial scheduled reviews,
+   with its streak and longest recall copied from the other word. The history
+   log shows it: an answer whose "rating before" isn't Solid although the
+   word's previous answer was Solid, and which started the schedule the word is
+   on now. Those schedules are removed; where that answer is the word's latest,
+   its streak, longest recall, Solid-review count, prior, lapses and demotion
+   history are rebuilt from the log. */
+async function repairLookupGlitch(){
+  if(store.fix1)return;
+  const L=await readLog();
+  const seqs={};
+  L.filter(e=>e&&e.w&&e.m&&e.a&&e.a!=="k"&&!e.k).sort((a,b)=>a.t-b.t).forEach(e=>{
+    const key=e.m+"|"+e.w,arr=seqs[key]=seqs[key]||[];
+    if(e.re&&arr.length)arr.pop();
+    arr.push(e);
+  });
+  /* sessions that only ever hold Solid words */
+  const SOLID_ONLY=["a","x","g","s"];
+  /* a reset wipes ratings, so an answer from before one says nothing about after it */
+  const resets=L.filter(e=>e&&e.k==="reset").map(e=>e.t);
+  const across=(a,b)=>resets.some(t=>t>a&&t<b);
+  const fixed=[];
+  Object.keys(seqs).forEach(key=>{
+    const seq=seqs[key],m=key[0],hz=key.slice(2),md=m==="r"?"reading":"writing";
+    const G=grad(md),R=rmap(md);
+    const bad=new Set();
+    seq.forEach((e,j)=>{
+      if(e.x==="q"||e.p==="s")return;
+      const prev=j&&!across(seq[j-1].t,e.t)?seq[j-1]:null;
+      const solidBefore=prev?prev.a==="s":SOLID_ONLY.includes(e.x);
+      if(solidBefore&&(prev||SOLID_ONLY.includes(e.x)))bad.add(j);
+    });
+    if(!bad.size)return;
+    const last=seq.length-1,e=seq[last];
+    let touched=false;
+    /* the schedule this glitch started */
+    seq.forEach((q,j)=>{if(bad.has(j)&&q.a==="s"&&G[hz]&&G[hz].t===q.t){delete G[hz];touched=true;}});
+    /* demotion history: a demotion is Solid before and not Solid after */
+    const DM=rdemote(md);
+    const dm=[];
+    seq.forEach((q,j)=>{const before=bad.has(j)?"s":(j&&!across(seq[j-1].t,q.t)?seq[j-1].a:q.p);if(before==="s"&&q.a!=="s")dm.push(q.t);});
+    const old=(DM[hz]||[]).filter(t=>t<seq[0].t);
+    const all=[...new Set(old.concat(dm))].sort((a,b)=>a-b);
+    if(JSON.stringify(all)!==JSON.stringify(DM[hz]||[])){if(all.length)DM[hz]=all;else delete DM[hz];touched=true;}
+    /* the rest can be rebuilt when the glitch answer is the latest and the
+       answer before it is in the log */
+    if(bad.has(last)&&last>0&&!across(seq[last-1].t,e.t)&&e.a==="s"&&R[hz]==="s"){
+      const p=seq[last-1];
+      const ST=rstreak(md),BS=rbest(md),SR=rsolid(md),PR=rprior(md),LP=rlapse(md);
+      const gapP=p.gd!=null?p.gd:(p.g!=null?Math.round(p.g):null);
+      const bs1=gapP!=null&&p.p==="s"?Math.max(p.bs||0,gapP):(p.bs||0);
+      ST[hz]=(p.st||0)+2;
+      BS[hz]=Math.round(Math.max(bs1,calDays(p.t,e.t)));
+      SR[hz]=(p.p==="s"?(p.sr||0)+1:(p.sr==null?0:p.sr))+1;
+      if(p.pr==null)delete PR[hz];else PR[hz]=p.pr;
+      LP[hz]=p.lp||0;
+      touched=true;
+    }
+    if(touched)fixed.push(hz);
+  });
+  store.fix1=1;
+  if(fixed.length)store.fix1n=fixed.length;
+  saveStore();
+  if(fixed.length)try{renderHome();}catch(e){}
+  return fixed;
+}
 async function backfillDemotions(){
   if(store.dem1)return;
   const L=await readLog();
@@ -3180,7 +3249,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.22";
+const APP_VERSION="1.24";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -3401,6 +3470,15 @@ function lapseCredit(asked,gapDays){
   if(!(gapDays>0))return 1;
   return Math.max(0.25,Math.min(1,asked/gapDays));
 }
+/* Days are calendar days in the device's current time zone: something done at
+   6 pm yesterday was "1 day ago" at 10 am today, and a word learned yesterday
+   evening is due for its 1-day review from midnight. Counting from local
+   midnight means nothing changes during the day, only when the date does.
+   After a time-zone change every date is simply read in the new zone, which is
+   also how today's date (todayStr) is worked out. */
+function dayNum(t){const d=new Date(t);return Math.round(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/864e5);}
+function calDays(from,to){return dayNum(to==null?Date.now():to)-dayNum(from);}
+function midnightAfter(t,n){const d=new Date(t);return new Date(d.getFullYear(),d.getMonth(),d.getDate()+n).getTime();}
 function todayStr(){
   const d=new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
@@ -3451,7 +3529,7 @@ function grad(md){
   store.grad.reading=store.grad.reading||{};store.grad.writing=store.grad.writing||{};
   return store.grad[md];
 }
-function gradDueAt(rec){const g=gradDays();return rec.t+(g[rec.s]||0)*864e5;}
+function gradDueAt(rec){const g=gradDays();return midnightAfter(rec.t,g[rec.s]||0);}
 function gradPending(rec){return !!rec&&rec.s<gradDays().length;}
 function gradDue(rec,now){return gradPending(rec)&&now>=gradDueAt(rec);}
 
@@ -3483,7 +3561,7 @@ function reviewList(deck,md){
   const n=pool.length;
   /* days since this word was last answered; a word from before timestamps were
      kept counts as 10 days — stale enough to weight, not old enough to force */
-  const dsince=hz=>{const t=RL[hz];return t?(now-t)/864e5:10;};
+  const dsince=hz=>{const t=RL[hz];return t?calDays(t,now):10;};
   /* Smoothed lapse rate: lapses against reviews survived while Solid, started
      off from the learning prior rather than from a flat "assume nothing". */
   const diff=hz=>{const a=priorNow(PR[hz],SR[hz]);return ((LP[hz]||0)+a)/((SR[hz]||0)+a+1);};
@@ -3699,6 +3777,18 @@ function migrateStore(){
     });
     delete store.daily;          /* today's lists rebuild against the new weighting */
     store.prior1=1;
+  }
+  /* ---- v1.23: longest recall is counted in calendar days. It was measured
+     in exact 24-hour periods (16 hours = 0.67 days); those are rounded to the
+     nearest whole day, which is what a calendar count would most likely have
+     given. Today's review lists are left as they are. ---- */
+  if(!store.cal1){
+    const B=store.best||{};
+    ["reading","writing"].forEach(md=>{
+      const BS=B[md]||{};
+      Object.keys(BS).forEach(hz=>{if(typeof BS[hz]==="number")BS[hz]=Math.round(BS[hz]);});
+    });
+    store.cal1=1;
   }
   saveStore();
 }
@@ -3977,7 +4067,7 @@ function riskGrace(){return typeof SET.riskGrace==="number"?SET.riskGrace:3;}
 function atRisk(md){
   const BS=rbest(md),RL=rlast(md),G=grad(md),now=Date.now();
   return solidWords(md).filter(hz=>!gradPending(G[hz])&&BS[hz]>=1&&RL[hz])
-    .map(hz=>({hz,days:(now-RL[hz])/864e5,best:BS[hz]}))
+    .map(hz=>({hz,days:calDays(RL[hz],now),best:BS[hz]}))
     .filter(o=>o.days-o.best>=riskGrace())
     .sort((a,b)=>b.days/b.best-a.days/a.best);
 }
@@ -4322,6 +4412,7 @@ $("#restore-file").onchange=async e=>{
     const words=applyRestore(payload);
     const added=await mergeLog(payload&&payload.log);
     delete store.dem1;await backfillDemotions().catch(()=>{});
+    await repairLookupGlitch().catch(()=>{});   /* a backup from before 1.24 may carry the glitch */
     renderHome();renderSettings();
     await showDialog("Progress restored",`Restored ratings for ${words} word entries${added?` and ${added.toLocaleString()} answers of study history`:""}.`,[{label:"OK",value:1,kind:"safe"}]);
   }catch(err){
@@ -4333,7 +4424,7 @@ $("#restore-file").onchange=async e=>{
 function wipeProgress(deckId){
   if(!deckId){   /* everything — but the lists and the words you added survive */
     const keep={lists:store.lists,cwords:store.cwords,cex:store.cex,flat1:store.flat1,relevel2:store.relevel2,
-                prior1:store.prior1,dem1:1};   /* history is kept on reset; don't rebuild what was just erased from it */
+                prior1:store.prior1,dem1:1,cal1:1,fix1:1};   /* history is kept on reset; don't rebuild what was just erased from it */
     store={stats:{},ratings:{reading:{},writing:{}}};
     Object.keys(keep).forEach(k=>{if(keep[k]!==undefined)store[k]=keep[k];});
     return;
@@ -5427,7 +5518,9 @@ $("#search-input").oninput=e=>{searchQuery=e.target.value;runSearch(searchQuery)
    can nest (word -> character -> another word) and unwind one at a time. */
 let navStack=[];
 function snapshotSession(){
-  return{level,mode,reviewing,deck,idx,sess:Object.assign({},sess),given:given.slice(),
+  /* snap holds each answered card's state from before it was answered; without
+     it, answering after coming back would start from the looked-up word's state */
+  return{level,mode,reviewing,deck,idx,sess:Object.assign({},sess),given:given.slice(),snap:snap.slice(),
          onBack:$("#face-back")&&$("#face-back").style.display!=="none",
          label:deck[idx]?deck[idx][0]:""};
 }
@@ -5441,7 +5534,7 @@ function renderReturnBar(){
 function popNav(){
   if(!navStack.length)return false;
   const p=navStack.pop();
-  level=p.level;mode=p.mode;reviewing=p.reviewing;deck=p.deck;idx=p.idx;sess=p.sess;given=p.given;
+  level=p.level;mode=p.mode;reviewing=p.reviewing;deck=p.deck;idx=p.idx;sess=p.sess;given=p.given;snap=p.snap||[];
   show("scr-card");renderCard();
   /* reading mode can safely land back on the answer side; a writing card's
      canvas can't be restored, so that one returns to the prompt */
@@ -5503,7 +5596,7 @@ $("#next-btn").onclick=()=>{       /* skip without rating: the card keeps its cu
   if(deck[idx]&&!given[idx]){
     const hz=deck[idx][0],t=Date.now(),lr=rlast(mode)[hz];
     logEvent({t,w:hz,m:mode==="reading"?"r":"w",a:"k",p:rmap(mode)[hz]||"",
-      g:lr?Math.round((t-lr)/864e5*100)/100:null,ms:clockActive(t),x:reviewing||"",d:String(level)});
+      g:lr?Math.round((t-lr)/864e5*100)/100:null,gd:lr?calDays(lr,t):null,ms:clockActive(t),x:reviewing||"",d:String(level)});
   }
   idx++;
   if(idx<deck.length)renderCard();else endSession();
@@ -5518,6 +5611,10 @@ function endSession(){
   $("#done-summary").textContent=total
     ?`${total} of ${deck.length} cards rated — ✓ ${sess.s} solid · 〜 ${sess.t} tentative · ✗ ${sess.n} not learned. (${deckName||"all decks"}, ${mode} mode)`
     :`Browsed ${deck.length} card${deck.length===1?"":"s"} without rating. (${deckName||"all decks"}, ${mode} mode)`;
+  /* "Go again" reruns a deck pass; the at-risk, today's-review and chart
+     sessions have no deck behind them, and their words have just been handled */
+  const again=$("#done-again");
+  if(again)again.style.display=(reviewing==="a"||reviewing==="x"||reviewing==="g")?"none":"";
   show("scr-done");
 }
 
@@ -5539,7 +5636,7 @@ function cardStat(hz){
   const t=rlast(mode)[hz];
   let ago="";
   if(t){
-    const days=Math.floor((Date.now()-t)/864e5);
+    const days=calDays(t);
     ago=days<=0?"today":days===1?"1d ago":`${days}d ago`;
   }
   return `${reviews} review${reviews>1?"s":""}${ago?" · "+ago:""}`;
@@ -6169,7 +6266,7 @@ function answer(r){
   const everSolid=SR[hz]!==undefined;
   /* how long this word had been left before now — words from before timestamps
      were kept count as 10 days, the same fallback the weighting uses */
-  const gap=was.t?(now-was.t)/864e5:10;
+  const gap=was.t?calDays(was.t,now):10;
   R[hz]=r;
   RL[hz]=now;
   if(r==="s"){
@@ -6207,7 +6304,8 @@ function answer(r){
   }
   if(reviewing==="x")reviewDecksFor(hz).forEach(id=>markReviewed(id,mode,hz));
   logEvent({t:now,w:hz,m:mode==="reading"?"r":"w",a:r,p:was.r||"",
-    g:was.t?Math.round(gap*100)/100:null,
+    g:was.t?Math.round((now-was.t)/864e5*100)/100:null,
+    gd:was.t?gap:null,
     ms:clockActive(now),
     fl:cardClock.flip!=null?cardClock.flip-cardClock.shown:null,
     rv:cardClock.reveal!=null?cardClock.reveal-cardClock.shown:null,
@@ -6231,7 +6329,7 @@ function answer(r){
 $("#done-home").onclick=()=>{renderHome();show("scr-home");};
 $("#done-again").onclick=()=>startSession(level,mode,reviewing);
 
-loadStore().then(()=>{receiveFromLaunchUrl();backfillDemotions().catch(()=>{});});
+loadStore().then(()=>{receiveFromLaunchUrl();backfillDemotions().catch(()=>{}).then(()=>repairLookupGlitch()).catch(()=>{});});
 /* Ask the browser to keep this app's data rather than evicting it under
    storage pressure — progress here represents months of study. */
 if(navigator.storage&&navigator.storage.persist){
