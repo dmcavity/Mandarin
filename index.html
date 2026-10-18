@@ -417,6 +417,15 @@ body{
 .seg-go{margin-top:8px;width:100%;padding:10px 0;border-radius:10px;border:1px solid var(--ink);background:var(--card);
   color:var(--ink);font-size:13.5px;font-weight:700;cursor:pointer;font-family:var(--ui-font)}
 .dur-untested{background:repeating-linear-gradient(135deg,#D9D2C3 0 3px,#EFEAE0 3px 6px)}
+.st-done{margin-top:12px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);border-left:3px solid var(--jade);
+  background:var(--card);font-size:12.5px;color:var(--ink)}
+.risk-fold{margin-top:10px}
+.risk-fold summary{list-style:none;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 0;
+  font-size:12.5px;color:var(--sand);cursor:pointer}
+.risk-fold summary::-webkit-details-marker{display:none}
+.risk-fold .chev{width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;
+  transform:rotate(45deg) translateY(-2px);transition:transform .15s}
+.risk-fold[open] .chev{transform:rotate(-135deg) translateY(-1px)}
 .st-card details{margin-top:10px}
 .st-card summary{font-size:12px;color:var(--sand);cursor:pointer}
 .st-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11.5px}
@@ -3254,7 +3263,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.30";
+const APP_VERSION="1.31";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -4022,7 +4031,7 @@ function startTodayReview(){
     const e=wordEntry(hz);if(e)cards.push(e);
   }));
   if(!cards.length)return;
-  navStack=[];
+  navStack=[];sessFrom=null;
   level=0;deckName="All decks";mode=homeMode;reviewing="x";
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
@@ -4082,6 +4091,7 @@ function startRiskReview(md){
   const cards=list.map(o=>wordEntry(o.hz)).filter(Boolean);
   if(!cards.length)return;
   navStack=[];
+  leaveStatsForReview();
   level=0;deckName="Past their longest recall";mode=md;reviewing="a";
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
@@ -4144,6 +4154,7 @@ function startChartReview(md,key,lv,b){
   if(!cards.length)return;
   navStack=[];
   const what=key==="ago"?"last reviewed "+C.bands[b].label.toLowerCase().replace(/^no date$/,"– no date"):key==="cnt"?C.bands[b].label+" reviews":C.bands[b].label;
+  leaveStatsForReview();
   level=0;deckName=levelName(lv)+" · "+what;mode=md;reviewing=C.ctx;
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
@@ -4174,6 +4185,21 @@ function chartBody(md,key,rows,esc){
       ${any?`<details><summary>Show the numbers</summary>${table}</details>`:""}`;
 }
 let statsMode=null;
+/* A review started from Progress returns to Progress — same tab, same scroll
+   position, same chart segments selected — when it ends or is closed. */
+let sessFrom=null,statsY=0,statsSel={},statsDone="",riskOpen=false;
+function leaveStatsForReview(){sessFrom="stats";try{statsY=window.scrollY||0;}catch(e){statsY=0;}}
+function backToStats(summary){
+  sessFrom=null;navStack=[];renderReturnBar();
+  statsDone=summary||"";
+  renderStats();show("scr-stats");
+  try{window.scrollTo(0,statsY);}catch(e){}
+}
+function sessionSummary(){
+  const total=sess.s+sess.t+sess.n;
+  if(!total)return "";
+  return `Reviewed ${total} word${total===1?"":"s"}: ✓ ${sess.s} Solid · 〜 ${sess.t} Tentative · ✗ ${sess.n} Not learned`;
+}
 function renderStats(){
   const md=statsMode||homeMode;
   const body=$("#stats-body");
@@ -4207,6 +4233,16 @@ function renderStats(){
       <button data-md="reading" class="${md==="reading"?"on":""}">认 Reading</button>
       <button data-md="writing" class="${md==="writing"?"on":""}">写 Writing</button>
     </div>
+    ${statsDone?`<div class="st-done" id="st-done">${esc(statsDone)}</div>`:""}
+    <div class="st-card">
+      <h3>Past their longest recall</h3>
+      <div class="st-hero"><b>${risk.length}</b><span>Solid word${risk.length===1?"":"s"} ${riskGrace()} or more day${riskGrace()===1?"":"s"}<br>beyond ${risk.length===1?"its":"their"} longest recall</span></div>
+      ${risk.length?`<button class="risk-go" id="risk-go">Review ${risk.length===1?"this word":"these "+risk.length+" words"}</button>
+        <details class="risk-fold" id="risk-fold"${riskOpen?" open":""}><summary><span>${risk.length===1?"Show the word":risk.length>40?"Show the 40 most overdue":"Show the "+risk.length+" words"}</span><i class="chev" aria-hidden="true"></i></summary>
+          <div class="risk-list">${riskRows}</div>
+        </details>`:""}
+      <div class="set-note">Not included: words still on their initial scheduled reviews${unt?`, and ${unt} Solid word${unt===1?"":"s"} not yet tested`:""}.</div>
+    </div>
     <div class="st-card">
       <h3>How long your words are remembered</h3>
       <div class="st-pair">
@@ -4215,14 +4251,6 @@ function renderStats(){
       </div>
       ${chartBody(md,"dur",rows,esc)}
       <div class="set-note"><b>Longest recall:</b> the longest time between reviews after which a word was still recalled. <b>Not yet tested:</b> not yet reviewed after an interval of at least a day${tested?"":`; this applies to every word in ${mdName} so far`}.</div>
-    </div>
-    <div class="st-card">
-      <h3>Past their longest recall</h3>
-      <div class="st-hero"><b>${risk.length}</b><span>Solid word${risk.length===1?"":"s"} ${riskGrace()} or more day${riskGrace()===1?"":"s"}<br>beyond ${risk.length===1?"its":"their"} longest recall</span></div>
-      ${risk.length?`<button class="risk-go" id="risk-go">Review ${risk.length===1?"this word":"these "+risk.length+" words"}</button>
-        <div class="risk-list">${riskRows}</div>
-        ${risk.length>40?`<div class="set-note">Showing the 40 most overdue.</div>`:""}`:""}
-      <div class="set-note">Not included: words still on their initial scheduled reviews${unt?`, and ${unt} Solid word${unt===1?"":"s"} not yet tested`:""}.</div>
     </div>
     <div class="st-card">
       <h3>Time since last review</h3>
@@ -4245,6 +4273,7 @@ function renderStats(){
   body.querySelectorAll("#st-seg button").forEach(b=>b.onclick=()=>{statsMode=b.dataset.md;renderStats();});
   body.querySelectorAll(".dur-bar .dseg").forEach(b=>b.onclick=()=>{
     const key=b.dataset.chart;
+    statsSel[key]={md,lv:b.dataset.lv,band:b.dataset.band};
     body.querySelectorAll(`.dur-bar .dseg.sel[data-chart="${key}"]`).forEach(x=>x.classList.remove("sel"));
     b.classList.add("sel");
     const tip=$(key==="dur"?"#dur-tip":"#"+key+"-tip"),go=$(key==="dur"?"#seg-go":"#"+key+"-go");
@@ -4255,8 +4284,16 @@ function renderStats(){
     go.onclick=()=>startChartReview(md,key,+b.dataset.lv,+b.dataset.band);
   });
   const go=$("#risk-go");if(go)go.onclick=()=>startRiskReview(md);
+  const fold=$("#risk-fold");if(fold)fold.ontoggle=()=>{riskOpen=fold.open;};
+  /* put back the segments that were selected before a review */
+  Object.keys(statsSel).forEach(key=>{
+    const v=statsSel[key];if(!v||v.md!==md)return;
+    const seg=body.querySelector(`.dseg[data-chart="${key}"][data-lv="${v.lv}"][data-band="${v.band}"]`);
+    if(seg)seg.onclick();else delete statsSel[key];
+  });
+  statsDone="";
 }
-function openStats(){statsMode=homeMode;renderStats();show("scr-stats");try{window.scrollTo(0,0);}catch(e){}}
+function openStats(){statsMode=homeMode;statsSel={};riskOpen=false;renderStats();show("scr-stats");try{window.scrollTo(0,0);}catch(e){}}
 
 const ALL_LEVELS=[1,2,3,4];
 function renderHome(){
@@ -5655,6 +5692,7 @@ function startSearchCard(hz,lv,remember){
   if(!entry)return;
   if(remember&&deck.length&&$("#scr-card").classList.contains("active")&&
      !(deck.length===1&&deck[0][0]===hz))navStack.push(snapshotSession());
+  if(!remember)sessFrom=null;
   level=lv;deckName=VIDX[hz]?("HSK "+entry[3]):"Lookup";mode=remember?mode:homeMode;reviewing="q";
   deck=[entry];idx=0;sess={s:0,t:0,n:0};given=[];snap=[];rep=[];repN={};repQ=[];repCount=0;
   show("scr-card");renderCard();renderReturnBar();
@@ -5664,7 +5702,7 @@ function startSearchCard(hz,lv,remember){
 function startSession(deckId,md,filter){
   const dk=deckById(deckId);
   if(!dk)return;
-  navStack=[];renderReturnBar();
+  navStack=[];renderReturnBar();sessFrom=null;
   level=dk.id;deckName=dk.name;mode=md;reviewing=filter;
   const R=rmap(md);
   let cards=dk.words.slice();
@@ -5690,7 +5728,10 @@ function startSession(deckId,md,filter){
   deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];rep=[];repN={};repQ=[];repCount=0;
   show("scr-card");renderCard();
 }
-$("#exit-btn").onclick=()=>{navStack=[];renderReturnBar();renderHome();show("scr-home");};
+$("#exit-btn").onclick=()=>{
+  if(sessFrom==="stats"){backToStats(sessionSummary());return;}
+  navStack=[];renderReturnBar();renderHome();show("scr-home");
+};
 $("#back-btn").onclick=()=>{
   if(idx>0){idx--;renderCard();}   /* re-shows the previous card; re-answering replaces the earlier rating */
 };
@@ -5711,6 +5752,7 @@ function endSession(){
     renderHome();show("scr-home");
     return;
   }
+  if(sessFrom==="stats"){backToStats(sessionSummary());return;}
   const total=sess.s+sess.t+sess.n;
   const nRep=rep.filter(Boolean).length;
   $("#done-summary").textContent=total
