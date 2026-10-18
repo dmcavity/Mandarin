@@ -1,7 +1,7 @@
 {
-  "name": "汉字卡 HSK Flashcards",
-  "short_name": "汉字卡",
-  "description": "HSK 1–4 Mandarin flashcard drills with calligraphic writing practice",
+  "name": "温故 Wengu · Flashcards for reading and writing Chinese",
+  "short_name": "温故 Wengu",
+  "description": "Flashcards for reading (认) and writing (写) Chinese characters: HSK 1–4, handwriting practice and spaced review",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

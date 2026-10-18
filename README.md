@@ -1,4 +1,8 @@
-# 汉字卡 HSK Flashcards
+# 温故 Wengu
+
+**Flashcards for reading and writing Chinese characters.**
+
+The name comes from Confucius: 温故而知新, "review the old and you will learn the new." That is what the app does — it brings back what you have learned, at the right time, so it stays.
 
 A Mandarin flashcard app for reading and writing the 1,208 words of HSK levels 1–4. It runs in the browser, installs on a phone like a native app, and works offline.
 
@@ -12,7 +16,12 @@ A Mandarin flashcard app for reading and writing the 1,208 words of HSK levels 1
 - **Three ratings.** Each answer is rated **Solid**, **Tentative** or **Not learned**, separately for reading and writing. Each deck can be studied in full or filtered to one rating. In a Tentative or Not learned pass, words you already know in the other mode come first.
 - **Words for review.** A short daily selection of Solid words. It favours words you have had to relearn and words you haven't seen for a while, and passes over words you have recalled correctly many times running. You set the number per deck.
 - **Initial scheduled reviews.** A word that has just become Solid comes back after a set number of days (1, 3 and 6 by default) to fix it in long-term memory before it joins the daily review.
-- **Progress.** A chart of how long your Solid words are remembered, grouped by each word's longest recall: the longest gap between reviews after which you still recalled it. A list shows words that have gone past their longest recall. Tap any part of the chart to review those words.
+- **Progress.** Three charts, one bar per HSK level:
+  - how long your Solid words are remembered, by each word's longest recall (the longest gap between reviews after which you still recalled it);
+  - how long since each word was last reviewed;
+  - how many times each word has been reviewed.
+
+  Tap any part of a chart to see how many words it holds and review them. A list shows words that have gone past their longest recall.
 - **Your own lists and words.** Make lists for a textbook chapter, a topic or anything else, and add words that aren't in HSK 1–4. Progress on a word is shared between your list and its HSK deck.
 - **Add words from other apps** (Android). Share a word from Google Translate, a browser or any other app to the app, or copy it and use the **Paste** button on the add-word screen. If only English text arrives, the app looks up the Chinese.
 - **Search** by English, pinyin or characters. Words that aren't in the app can be added to a list straight from the dictionary; if a word isn't there either, the app can translate it online or link to MDBG and Google Translate.

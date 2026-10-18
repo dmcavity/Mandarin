@@ -1,6 +1,6 @@
 # Third-party notices
 
-汉字卡 HSK Flashcards is built on the following work. The same list appears in the app under **Settings → About → Credits & licences**.
+温故 Wengu is built on the following work. The same list appears in the app under **Settings → About → Credits & licences**.
 
 | Component | Used for | Licence |
 |---|---|---|

@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>汉字卡 · HSK Flashcards</title>
+<title>温故 Wengu · Flashcards for reading and writing Chinese</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#A8352A">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="汉字卡">
+<meta name="apple-mobile-web-app-title" content="Wengu">
 <script>
 /* HanziWriter bundled locally so stroke rendering works with no network */
 /**
@@ -75,7 +75,12 @@ body{
   border-radius:6px;transform:rotate(-3deg);box-shadow:0 2px 0 rgba(120,30,20,.35);
 }
 .masthead h1{font-size:22px;letter-spacing:.5px}
-.masthead .sub{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--sand);margin-top:2px}
+.masthead h1 .amp{color:var(--cinnabar);font-weight:500;padding-left:2px}
+.masthead .sub{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--sand);margin-top:2px;white-space:nowrap}
+.masthead>div:nth-child(2){flex:1;min-width:0}
+.masthead .sub{overflow:hidden;text-overflow:ellipsis}
+@media (max-width:380px){.masthead .sub{font-size:10px;letter-spacing:.05em}}
+@media (max-width:340px){.masthead h1{font-size:19px;white-space:nowrap}.masthead .sub{font-size:9px;letter-spacing:0}.masthead{gap:10px}}
 
 .search-box{position:relative;margin-top:12px}
 .search-box input{width:100%;padding:11px 14px;border-radius:11px;border:1px solid var(--line);background:var(--card);
@@ -447,8 +452,8 @@ body{
   <div class="masthead">
     <div class="chop">字</div>
     <div>
-      <h1>汉字卡</h1>
-      <div class="sub">HSK Flashcard Drills</div>
+      <h1>温故 <span class="amp">Wengu</span></h1>
+      <div class="sub">Read &amp; write flashcards</div>
     </div>
     <button class="gear stats-btn" id="stats-btn" aria-label="Progress" title="Progress"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><rect x="3" y="13" width="4.2" height="8" rx="1.2" fill="currentColor"/><rect x="9.9" y="8" width="4.2" height="13" rx="1.2" fill="currentColor"/><rect x="16.8" y="3" width="4.2" height="18" rx="1.2" fill="currentColor"/></svg></button>
     <button class="gear" id="gear-btn" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M9.89 4.28L10.25 0.94L13.75 0.94L14.11 4.28A8 8 0 0 1 15.96 5.05L18.58 2.94L21.06 5.42L18.95 8.04A8 8 0 0 1 19.72 9.89L23.06 10.25L23.06 13.75L19.72 14.11A8 8 0 0 1 18.95 15.96L21.06 18.58L18.58 21.06L15.96 18.95A8 8 0 0 1 14.11 19.72L13.75 23.06L10.25 23.06L9.89 19.72A8 8 0 0 1 8.04 18.95L5.42 21.06L2.94 18.58L5.05 15.96A8 8 0 0 1 4.28 14.11L0.94 13.75L0.94 10.25L4.28 9.89A8 8 0 0 1 5.05 8.04L2.94 5.42L5.42 2.94L8.04 5.05A8 8 0 0 1 9.89 4.28ZM12 8.05A3.95 3.95 0 1 0 12 15.95A3.95 3.95 0 1 0 12 8.05Z"/></svg></button>
@@ -3249,7 +3254,7 @@ document.addEventListener("visibilitychange",()=>{
 /* Every user-tunable lives here so new options only need a DEFAULTS entry and
    a row in the settings spec below. shuffle/mode/voice keep their own live
    globals (used all over) and are folded in whenever settings are saved. */
-const APP_VERSION="1.25";
+const APP_VERSION="1.30";
 const DEFAULTS={
   shuffle:true,
   mode:"reading",
@@ -3261,6 +3266,7 @@ const DEFAULTS={
   maxGap:50,                    // never let a Solid word go longer than this without a review (0 = off)
   riskGrace:3,                  // days past its proven gap before a word counts as at risk
   gradDays:[1,3,6],             // scheduled reviews after a word first becomes Solid
+  repeatNew:true,               // in a Tentative or Not learned pass, new words come back a few cards later
   autoSpeak:false,              // speak the word automatically when a reading card is flipped
   showStats:true,               // the "3 reviews · 5d ago" badge on the card front
   maxCards:0,                   // 0 = no limit on cards per session
@@ -3293,6 +3299,7 @@ function applySettings(o){
   SET.listSort=LIST_SORTS.some(x=>x.v===o.listSort)?o.listSort:d.listSort;
   SET.lastList=typeof o.lastList==="string"?o.lastList:null;
   SET.autoSpeak=typeof o.autoSpeak==="boolean"?o.autoSpeak:d.autoSpeak;
+  SET.repeatNew=typeof o.repeatNew==="boolean"?o.repeatNew:d.repeatNew;
   SET.showStats=typeof o.showStats==="boolean"?o.showStats:d.showStats;
   SET.onlineLookup=typeof o.onlineLookup==="boolean"?o.onlineLookup:d.onlineLookup;
   SET.maxCards=(typeof o.maxCards==="number"&&o.maxCards>=0&&o.maxCards<=1000)?Math.round(o.maxCards):d.maxCards;
@@ -3357,7 +3364,7 @@ function updateDailyNotice(){
     };
   });
 }
-let sess={s:0,t:0,n:0},given=[],snap=[];                   // given[i] = rating already recorded for deck[i]
+let sess={s:0,t:0,n:0},given=[],snap=[],rep=[],repN={},repQ=[],repCount=0;   // rep[i] = {step} when deck[i] is a repeat of a new word; repN[hz] = its reviews before this pass                   // given[i] = rating already recorded for deck[i]
                                                            // snap[i]  = that word's state before it was first answered
 let canvases=[],revealMode=null,drawLocked=false,eraseMode=false,answeredThisCard=false;
 
@@ -4019,7 +4026,7 @@ function startTodayReview(){
   level=0;deckName="All decks";mode=homeMode;reviewing="x";
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
-  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
+  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];rep=[];repN={};repQ=[];repCount=0;
   show("scr-card");renderCard();renderReturnBar();
 }
 function toggleDeck(id){
@@ -4053,12 +4060,7 @@ function solidWords(md){
   const R=rmap(md);
   return Object.keys(R).filter(hz=>R[hz]==="s"&&wordEntry(hz));
 }
-function durability(md){
-  const BS=rbest(md);
-  const rows={};LEVEL_ROWS.forEach(lv=>rows[lv]=DUR_BANDS.map(()=>0));
-  solidWords(md).forEach(hz=>{const lv=wordLevel(hz);if(rows[lv])rows[lv][durBand(BS[hz])]++;});
-  return rows;
-}
+function durability(md){return chartRows(md,"dur");}
 /* At risk: Solid, not waiting on one of its initial scheduled reviews (those
    are already booked), has a proven gap of at least a day, and it is now at
    least riskGrace() days past that gap (a setting, default 3) — a day over is
@@ -4083,51 +4085,123 @@ function startRiskReview(md){
   level=0;deckName="Past their longest recall";mode=md;reviewing="a";
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
-  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
+  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];rep=[];repN={};repQ=[];repCount=0;
   show("scr-card");renderCard();renderReturnBar();
 }
-/* The words behind one segment of the durability chart: Solid, in that level,
-   whose proven gap falls in that band. */
-function bandWords(md,lv,band){
-  const BS=rbest(md);
-  return solidWords(md).filter(hz=>wordLevel(hz)===lv&&durBand(BS[hz])===band);
+/* ---- the Progress charts: one bar per level, split into bands ----
+   Each chart says which words it covers and which band a word falls in; the
+   bars, legend, tap-a-segment count and "Review these" button are shared. */
+const AGO_BANDS=[
+  {label:"No date",    col:null},
+  {label:"Today",      col:"#F3E3B5"},
+  {label:"1–2 days",   col:"#E6C677"},
+  {label:"3–6 days",   col:"#D3A23F"},
+  {label:"1–2 weeks",  col:"#B07A1E"},
+  {label:"2–4 weeks",  col:"#7E5410"},
+  {label:"4+ weeks",   col:"#4D320A"}
+];
+function agoBand(days){
+  if(days==null)return 0;
+  return days<=0?1:days<=2?2:days<=6?3:days<=13?4:days<=27?5:6;
 }
-function startBandReview(md,lv,band){
-  const cards=bandWords(md,lv,band).map(hz=>wordEntry(hz)).filter(Boolean);
+const CNT_BANDS=[
+  {label:"0–1",    col:"#D6DCEB"},
+  {label:"2–3",    col:"#AEB9D6"},
+  {label:"4–6",    col:"#7F8FBD"},
+  {label:"7–10",   col:"#586AA0"},
+  {label:"11–20",  col:"#3A4A7E"},
+  {label:"21+",    col:"#22305A"}
+];
+function cntBand(n){return n<=1?0:n<=3?1:n<=6?2:n<=10?3:n<=20?4:5;}
+/* every word rated in this mode, whatever the rating */
+function studiedWords(md){
+  const R=rmap(md);
+  return Object.keys(R).filter(hz=>(R[hz]==="s"||R[hz]==="t"||R[hz]==="n")&&wordEntry(hz));
+}
+const CHARTS={
+  dur:{bands:DUR_BANDS,words:solidWords,ctx:"g",
+       bandOf:md=>{const BS=rbest(md);return hz=>durBand(BS[hz]);}},
+  ago:{bands:AGO_BANDS,words:studiedWords,ctx:"l",
+       bandOf:md=>{const RL=rlast(md),now=Date.now();return hz=>agoBand(RL[hz]?calDays(RL[hz],now):null);}},
+  cnt:{bands:CNT_BANDS,words:studiedWords,ctx:"c",
+       bandOf:md=>{const RC=rcount(md);return hz=>cntBand(RC[hz]||0);}}
+};
+function chartRows(md,key){
+  const C=CHARTS[key],band=C.bandOf(md);
+  const rows={};LEVEL_ROWS.forEach(lv=>rows[lv]=C.bands.map(()=>0));
+  C.words(md).forEach(hz=>{const lv=wordLevel(hz);if(rows[lv])rows[lv][band(hz)]++;});
+  return rows;
+}
+function chartWords(md,key,lv,b){
+  const C=CHARTS[key],band=C.bandOf(md);
+  return C.words(md).filter(hz=>wordLevel(hz)===lv&&band(hz)===b);
+}
+/* kept for the durability chart's callers */
+function bandWords(md,lv,band){return chartWords(md,"dur",lv,band);}
+function startChartReview(md,key,lv,b){
+  const C=CHARTS[key];
+  const cards=chartWords(md,key,lv,b).map(hz=>wordEntry(hz)).filter(Boolean);
   if(!cards.length)return;
   navStack=[];
-  level=0;deckName=levelName(lv)+" · "+DUR_BANDS[band].label;mode=md;reviewing="g";
+  const what=key==="ago"?"last reviewed "+C.bands[b].label.toLowerCase().replace(/^no date$/,"– no date"):key==="cnt"?C.bands[b].label+" reviews":C.bands[b].label;
+  level=0;deckName=levelName(lv)+" · "+what;mode=md;reviewing=C.ctx;
   let cs=cards;
   if(shuffleOn)cs=[...cs].sort(()=>Math.random()-0.5);
-  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
+  deck=cs;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];rep=[];repN={};repQ=[];repCount=0;
   show("scr-card");renderCard();renderReturnBar();
+}
+function startBandReview(md,lv,band){startChartReview(md,"dur",lv,band);}
+/* bars, legend, tip, review button and table for one chart */
+function chartBody(md,key,rows,esc){
+  const B=CHARTS[key].bands;
+  const swatch=i=>B[i].col?`background:${B[i].col}`:"";
+  const segCls=i=>"dseg"+(B[i].col?"":" dur-untested");
+  const used=LEVEL_ROWS.filter(lv=>rows[lv].some(Boolean));
+  const unit=key==="cnt"?" reviews":"";
+  const bars=used.map(lv=>{
+    const r=rows[lv],n=r.reduce((a,b)=>a+b,0);
+    const segs=r.map((c,i)=>c?`<button class="${segCls(i)}" style="flex:${c};${swatch(i)}" data-chart="${key}" data-lv="${lv}" data-band="${i}" data-n="${c}" data-tip="${esc(levelName(lv))} · ${esc(B[i].label)}${unit} · ${c} word${c===1?"":"s"} (${Math.round(100*c/n)}%)" aria-label="${esc(levelName(lv))}, ${esc(B[i].label)}${unit}: ${c}"></button>`:"").join("");
+    return `<div class="dur-row"><span class="lv">${esc(levelName(lv))}</span><div class="dur-bar">${segs}</div><span class="n">${n}</span></div>`;
+  }).join("");
+  const table=`<table class="st-table"><tr><th></th>${B.map(b=>`<th>${esc(b.label.replace("Not yet tested","untested"))}</th>`).join("")}</tr>`+
+    used.map(lv=>`<tr><td>${esc(levelName(lv))}</td>${rows[lv].map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")+`</table>`;
+  const tipId=key==="dur"?"dur-tip":key+"-tip",goId=key==="dur"?"seg-go":key+"-go";
+  const any=used.length>0;
+  return `<div class="dur-legend">${B.map((b,i)=>`<span><i class="${b.col?"":"dur-untested"}" style="${swatch(i)}"></i>${esc(b.label)}</span>`).join("")}</div>
+      ${any?bars:`<div class="set-note">No words in ${md} yet.</div>`}
+      <div class="dur-tip" id="${tipId}">${any?"Tap a segment for its word count.":""}</div>
+      <button class="seg-go" id="${goId}" style="display:none"></button>
+      ${any?`<details><summary>Show the numbers</summary>${table}</details>`:""}`;
 }
 let statsMode=null;
 function renderStats(){
   const md=statsMode||homeMode;
   const body=$("#stats-body");
   const esc=t=>String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  const rows=durability(md);
+  const rows=chartRows(md,"dur");
   const tot=DUR_BANDS.map((_,i)=>LEVEL_ROWS.reduce((a,lv)=>a+rows[lv][i],0));
   const nSolid=tot.reduce((a,b)=>a+b,0);
   const week=tot.slice(3).reduce((a,b)=>a+b,0);
   const tested=nSolid-tot[0];
   const risk=atRisk(md),unt=untested(md);
-  const swatch=(i)=>DUR_BANDS[i].col?`background:${DUR_BANDS[i].col}`:"";
-  const segCls=i=>"dseg"+(DUR_BANDS[i].col?"":" dur-untested");
-  const bars=LEVEL_ROWS.filter(lv=>rows[lv].some(Boolean)).map(lv=>{
-    const r=rows[lv],n=r.reduce((a,b)=>a+b,0);
-    const segs=r.map((c,i)=>c?`<button class="${segCls(i)}" style="flex:${c};${swatch(i)}" data-lv="${lv}" data-band="${i}" data-n="${c}" data-tip="${esc(levelName(lv))} · ${esc(DUR_BANDS[i].label)} · ${c} word${c===1?"":"s"} (${Math.round(100*c/n)}%)" aria-label="${esc(levelName(lv))}, ${esc(DUR_BANDS[i].label)}: ${c}"></button>`:"").join("");
-    return `<div class="dur-row"><span class="lv">${esc(levelName(lv))}</span><div class="dur-bar">${segs}</div><span class="n">${n}</span></div>`;
-  }).join("");
-  const table=`<table class="st-table"><tr><th></th>${DUR_BANDS.map(b=>`<th>${esc(b.label.replace("Not yet tested","untested"))}</th>`).join("")}</tr>`+
-    LEVEL_ROWS.filter(lv=>rows[lv].some(Boolean)).map(lv=>`<tr><td>${esc(levelName(lv))}</td>${rows[lv].map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")+`</table>`;
   const riskRows=risk.slice(0,40).map(o=>{
     const e=wordEntry(o.hz)||[o.hz,"",""];
     return `<div class="risk-row"><span class="h">${esc(o.hz)}</span>
       <span class="m"><b>${esc(e[1])}</b> ${esc(e[2])}</span>
       <span class="d">${Math.floor(o.days)} d ago<i>longest recall ${Math.floor(o.best)} d</i></span></div>`;
   }).join("");
+  /* time since last review */
+  const agoRows=chartRows(md,"ago");
+  const agoTot=AGO_BANDS.map((_,i)=>LEVEL_ROWS.reduce((a,lv)=>a+agoRows[lv][i],0));
+  const nStudied=agoTot.reduce((a,b)=>a+b,0);
+  const stale=agoTot[5]+agoTot[6],noDate=agoTot[0];
+  /* number of reviews */
+  const cntRows=chartRows(md,"cnt");
+  const cntTot=CNT_BANDS.map((_,i)=>LEVEL_ROWS.reduce((a,lv)=>a+cntRows[lv][i],0));
+  const RC=rcount(md),studied=studiedWords(md);
+  const avg=studied.length?studied.reduce((a,hz)=>a+(RC[hz]||0),0)/studied.length:0;
+  const many=cntTot[4]+cntTot[5];
+  const mdName=md==="reading"?"Reading":"Writing";
   body.innerHTML=`
     <div class="st-seg" id="st-seg">
       <button data-md="reading" class="${md==="reading"?"on":""}">认 Reading</button>
@@ -4139,12 +4213,8 @@ function renderStats(){
         <b>${nSolid}</b><span>Solid word${nSolid===1?"":"s"}</span>
         <b>${week}</b><span>recalled after a week or more</span>
       </div>
-      <div class="dur-legend">${DUR_BANDS.map((b,i)=>`<span><i class="${b.col?"":"dur-untested"}" style="${swatch(i)}"></i>${esc(b.label)}</span>`).join("")}</div>
-      ${nSolid?bars:`<div class="set-note">No Solid words in ${md} yet.</div>`}
-      <div class="dur-tip" id="dur-tip">${nSolid?"Tap a segment for its word count.":""}</div>
-      <button class="seg-go" id="seg-go" style="display:none"></button>
-      ${nSolid?`<details><summary>Show the numbers</summary>${table}</details>`:""}
-      <div class="set-note"><b>Longest recall:</b> the longest time between reviews after which a word was still recalled. <b>Not yet tested:</b> not yet reviewed after an interval of at least a day${tested?"":`; this applies to every word in ${md === "reading" ? "Reading" : "Writing"} so far`}.</div>
+      ${chartBody(md,"dur",rows,esc)}
+      <div class="set-note"><b>Longest recall:</b> the longest time between reviews after which a word was still recalled. <b>Not yet tested:</b> not yet reviewed after an interval of at least a day${tested?"":`; this applies to every word in ${mdName} so far`}.</div>
     </div>
     <div class="st-card">
       <h3>Past their longest recall</h3>
@@ -4153,15 +4223,36 @@ function renderStats(){
         <div class="risk-list">${riskRows}</div>
         ${risk.length>40?`<div class="set-note">Showing the 40 most overdue.</div>`:""}`:""}
       <div class="set-note">Not included: words still on their initial scheduled reviews${unt?`, and ${unt} Solid word${unt===1?"":"s"} not yet tested`:""}.</div>
+    </div>
+    <div class="st-card">
+      <h3>Time since last review</h3>
+      <div class="st-pair">
+        <b>${nStudied}</b><span>word${nStudied===1?"":"s"} studied</span>
+        <b>${stale}</b><span>not reviewed for 2 weeks or more</span>
+      </div>
+      ${chartBody(md,"ago",agoRows,esc)}
+      <div class="set-note">Every word you have rated in ${mdName}, whatever its rating, counted in calendar days.${noDate?` <b>No date:</b> rated before review dates were recorded.`:""}</div>
+    </div>
+    <div class="st-card">
+      <h3>Number of reviews</h3>
+      <div class="st-pair">
+        <b>${avg.toFixed(1)}</b><span>reviews per word on average</span>
+        <b>${many}</b><span>word${many===1?"":"s"} reviewed 11 times or more</span>
+      </div>
+      ${chartBody(md,"cnt",cntRows,esc)}
+      <div class="set-note">Every word you have rated in ${mdName}. Each pass through a word counts once; a new word coming back a few cards later in the same pass is not counted again.</div>
     </div>`;
   body.querySelectorAll("#st-seg button").forEach(b=>b.onclick=()=>{statsMode=b.dataset.md;renderStats();});
   body.querySelectorAll(".dur-bar .dseg").forEach(b=>b.onclick=()=>{
-    body.querySelectorAll(".dur-bar .dseg.sel").forEach(x=>x.classList.remove("sel"));
-    b.classList.add("sel");$("#dur-tip").textContent=b.dataset.tip;
-    const n=+b.dataset.n,go=$("#seg-go");
+    const key=b.dataset.chart;
+    body.querySelectorAll(`.dur-bar .dseg.sel[data-chart="${key}"]`).forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel");
+    const tip=$(key==="dur"?"#dur-tip":"#"+key+"-tip"),go=$(key==="dur"?"#seg-go":"#"+key+"-go");
+    tip.textContent=b.dataset.tip;
+    const n=+b.dataset.n;
     go.textContent=n===1?"Review this word":`Review these ${n} words`;
     go.style.display="block";
-    go.onclick=()=>startBandReview(md,+b.dataset.lv,+b.dataset.band);
+    go.onclick=()=>startChartReview(md,key,+b.dataset.lv,+b.dataset.band);
   });
   const go=$("#risk-go");if(go)go.onclick=()=>startRiskReview(md);
 }
@@ -4997,7 +5088,7 @@ async function pasteFlow(){
 
 /* ============ WORDS ARRIVING FROM OTHER APPS ============ */
 /* The app is registered as an Android share target (see manifest.json), so
-   "Share → 汉字卡" from Google Translate, Lens, WeChat or a web page opens it at
+   "Share → Wengu" from Google Translate, Lens, WeChat or a web page opens it at
    ./?text=…  The recognising has already been done by the other app; all this
    has to do is pick the Chinese out of whatever came with it, ask which list,
    and land on the add screen with it searched. */
@@ -5278,6 +5369,8 @@ function settingsSpec(){
        val:()=>SET.maxCards?SET.maxCards+" cards":"No limit",
        opts:[{v:0,label:"No limit"},{v:20,label:"20 cards"},{v:30,label:"30 cards"},{v:50,label:"50 cards"},{v:100,label:"100 cards"}],
        get:()=>SET.maxCards,set:v=>{SET.maxCards=v;saveSettings();}},
+      {type:"toggle",t:"Repeat new words in Tentative and Not learned passes",s:"A word you have never had Solid comes back a few cards later until you know it — sooner and more often the newer it is",
+       get:()=>SET.repeatNew!==false,set:v=>{SET.repeatNew=v;saveSettings();}},
       {type:"toggle",t:"Speak automatically",s:"Say the word aloud when a reading card is flipped over",
        get:()=>SET.autoSpeak,set:v=>{SET.autoSpeak=v;saveSettings();}},
       {type:"toggle",t:"Show review history on cards",s:"The “3 reviews · 5d ago” note on the front of each card",
@@ -5336,7 +5429,7 @@ function settingsSpec(){
        choiceBody:"Pick what to erase. You will be asked to confirm, and offered a backup first. Lists and the words you added are kept — only progress is erased."}
     ]},
     {title:"About",rows:[
-      {type:"info",t:"汉字卡 HSK Flashcards",s:"Version "+APP_VERSION},
+      {type:"info",t:"温故 Wengu",s:"温故而知新 — review the old and learn the new (Confucius) · version "+APP_VERSION},
       {type:"action",t:"Credits & licences",s:"The libraries and data this app is built on",act:()=>{show("scr-credits");try{window.scrollTo(0,0);}catch(e){}}},
       {type:"info",t:V.length+" words · "+Object.keys(CH).length+" characters",s:"HSK levels 1–4, with example sentences and stroke data stored in the app"}
     ]}
@@ -5529,7 +5622,7 @@ let navStack=[];
 function snapshotSession(){
   /* snap holds each answered card's state from before it was answered; without
      it, answering after coming back would start from the looked-up word's state */
-  return{level,mode,reviewing,deck,idx,sess:Object.assign({},sess),given:given.slice(),snap:snap.slice(),
+  return{level,mode,reviewing,deck,idx,sess:Object.assign({},sess),given:given.slice(),snap:snap.slice(),rep:rep.slice(),repN:Object.assign({},repN),repQ:repQ.slice(),repCount,
          onBack:$("#face-back")&&$("#face-back").style.display!=="none",
          label:deck[idx]?deck[idx][0]:""};
 }
@@ -5543,7 +5636,7 @@ function renderReturnBar(){
 function popNav(){
   if(!navStack.length)return false;
   const p=navStack.pop();
-  level=p.level;mode=p.mode;reviewing=p.reviewing;deck=p.deck;idx=p.idx;sess=p.sess;given=p.given;snap=p.snap||[];
+  level=p.level;mode=p.mode;reviewing=p.reviewing;deck=p.deck;idx=p.idx;sess=p.sess;given=p.given;snap=p.snap||[];rep=p.rep||[];repN=p.repN||{};repQ=p.repQ||[];repCount=p.repCount||0;
   show("scr-card");renderCard();
   /* reading mode can safely land back on the answer side; a writing card's
      canvas can't be restored, so that one returns to the prompt */
@@ -5563,7 +5656,7 @@ function startSearchCard(hz,lv,remember){
   if(remember&&deck.length&&$("#scr-card").classList.contains("active")&&
      !(deck.length===1&&deck[0][0]===hz))navStack.push(snapshotSession());
   level=lv;deckName=VIDX[hz]?("HSK "+entry[3]):"Lookup";mode=remember?mode:homeMode;reviewing="q";
-  deck=[entry];idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
+  deck=[entry];idx=0;sess={s:0,t:0,n:0};given=[];snap=[];rep=[];repN={};repQ=[];repCount=0;
   show("scr-card");renderCard();renderReturnBar();
 }
 
@@ -5594,7 +5687,7 @@ function startSession(deckId,md,filter){
     cards=cards.slice().sort((a,b)=>(O[b[0]]==="s")-(O[a[0]]==="s"));
   }
   if(SET.maxCards&&filter!=="x"&&cards.length>SET.maxCards)cards=cards.slice(0,SET.maxCards);
-  deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];
+  deck=cards;idx=0;sess={s:0,t:0,n:0};given=[];snap=[];rep=[];repN={};repQ=[];repCount=0;
   show("scr-card");renderCard();
 }
 $("#exit-btn").onclick=()=>{navStack=[];renderReturnBar();renderHome();show("scr-home");};
@@ -5606,8 +5699,10 @@ $("#next-btn").onclick=()=>{       /* skip without rating: the card keeps its cu
     const hz=deck[idx][0],t=Date.now(),lr=rlast(mode)[hz];
     logEvent({t,w:hz,m:mode==="reading"?"r":"w",a:"k",p:rmap(mode)[hz]||"",
       g:lr?Math.round((t-lr)/864e5*100)/100:null,gd:lr?calDays(lr,t):null,ms:clockActive(t),x:reviewing||"",d:String(level)});
+    repCount++;                    /* a skipped card still counts as one seen between repeats */
   }
   idx++;
+  placeRepeat();
   if(idx<deck.length)renderCard();else endSession();
 };
 function endSession(){
@@ -5617,22 +5712,23 @@ function endSession(){
     return;
   }
   const total=sess.s+sess.t+sess.n;
+  const nRep=rep.filter(Boolean).length;
   $("#done-summary").textContent=total
-    ?`${total} of ${deck.length} cards rated — ✓ ${sess.s} solid · 〜 ${sess.t} tentative · ✗ ${sess.n} not learned. (${deckName||"all decks"}, ${mode} mode)`
+    ?`${total} of ${deck.length} cards rated${nRep?`, including ${nRep} repeat${nRep===1?"":"s"} of new words`:""} — ✓ ${sess.s} solid · 〜 ${sess.t} tentative · ✗ ${sess.n} not learned. (${deckName||"all decks"}, ${mode} mode)`
     :`Browsed ${deck.length} card${deck.length===1?"":"s"} without rating. (${deckName||"all decks"}, ${mode} mode)`;
   /* "Go again" reruns a deck pass; the at-risk, today's-review and chart
      sessions have no deck behind them, and their words have just been handled */
   const again=$("#done-again");
-  if(again)again.style.display=(reviewing==="a"||reviewing==="x"||reviewing==="g")?"none":"";
+  if(again)again.style.display=(reviewing==="a"||reviewing==="x"||reviewing==="g"||reviewing==="l"||reviewing==="c")?"none":"";
   show("scr-done");
 }
 
 function updateHead(){
   $("#back-btn").style.visibility=idx>0?"visible":"hidden";
   $("#prog-bar").style.width=Math.round(100*idx/deck.length)+"%";
-  const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Review",q:"Search",a:"At risk",g:"From Progress"}[reviewing]||"";
+  const fl={s:"Solid",t:"Tentative",n:"Not learned",x:"Review",q:"Search",a:"At risk",g:"From Progress",l:"From Progress",c:"From Progress"}[reviewing]||"";
   const who=deckName||"All decks";
-  $("#session-info").textContent=`${who} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}`;
+  $("#session-info").textContent=`${who} · ${mode==="reading"?"Read":"Write"}${fl?" · "+fl:""} · ${idx+1}/${deck.length}${rep[idx]?" · again":""}`;
 }
 
 /* A combined review draws from several decks at once, so the level a card
@@ -6240,6 +6336,39 @@ function revealWriting(chars,size,hz){
   $("#wr-answers").style.display="flex";
 }
 
+/* ---------- Repeats of new words within a Tentative or Not learned pass ---------- */
+/* Cards to wait before each repeat, by how many times the word had been
+   reviewed before this pass: the newer it is, the sooner and more often. */
+function repeatGaps(n){return n<=2?[2,4,8]:n<=5?[4,8]:[6];}
+/* A repeat waits in a queue until the given number of other cards has been
+   answered, then goes in next; any still waiting when the pass runs out are
+   shown before it ends. */
+function scheduleRepeat(hz,r,prev,was,everSolid){
+  if((reviewing!=="t"&&reviewing!=="n")||SET.repeatNew===false)return;
+  const isRep=!!rep[idx];
+  if(!prev)repCount++;
+  if(!isRep&&!prev)repN[hz]=Math.max(0,(rcount(mode)[hz]||1)-1);   /* reviews before this one */
+  repQ=repQ.filter(q=>q.hz!==hz);              /* recomputed from this answer */
+  /* only words being learned for the first time: anything that has ever been
+     Solid (a Solid count, a lapse or a demotion on record) is seen once */
+  const learnedBefore=everSolid||(was.lp>0)||!!(was.dm&&was.dm.length);
+  if(r==="s"||learnedBefore)return;
+  const step=isRep?rep[idx].step+1:0;
+  const gaps=repeatGaps(repN[hz]||0);
+  if(step>=gaps.length)return;
+  repQ.push({hz,entry:deck[idx],step,due:repCount+gaps[step]});
+}
+function placeRepeat(){
+  if(!repQ.length)return;
+  repQ.sort((a,b)=>a.due-b.due);
+  const q=repQ[0];
+  if(q.due>repCount&&idx<deck.length)return;
+  repQ.shift();
+  const pad=a=>{while(a.length<deck.length)a.push(undefined);};
+  pad(given);pad(snap);pad(rep);
+  deck.splice(idx,0,q.entry);given.splice(idx,0,undefined);snap.splice(idx,0,undefined);rep.splice(idx,0,{step:q.step});
+}
+
 /* ---------- Answer & advance ---------- */
 function answer(r){
   if(answeredThisCard)return;
@@ -6251,7 +6380,7 @@ function answer(r){
   if(prev){ /* card was answered before (user came back) — replace the old judgment */
     sess[prev]--;st.seen--;if(prev==="s")st.correct--;
   }
-  if(!prev){ /* count one review per card per pass (a back-button revision is the same review) */
+  if(!prev&&!rep[idx]){ /* count one review per card per pass (a back-button revision is the same review, and so is a repeat of a new word) */
     const rc=rcount(mode);rc[hz]=(rc[hz]||0)+1;
   }
   given[idx]=r;
@@ -6299,8 +6428,9 @@ function answer(r){
       if(was.t)BS[hz]=Math.round(Math.min(BS[hz]||0,gap/2)*100)/100;
     }
     else if(!everSolid){
-      /* still learning it for the first time: this is what the prior is made of */
-      PR[hz]=Math.round(Math.min(3,(PR[hz]||1)+mw/6)*100)/100;
+      /* still learning it for the first time: this is what the prior is made of.
+         A repeat a few cards later isn't fresh evidence, so it doesn't count. */
+      if(!rep[idx])PR[hz]=Math.round(Math.min(3,(PR[hz]||1)+mw/6)*100)/100;
     }
     else{
       /* clawing it back after a lapse. Every extra round here says the word is
@@ -6326,12 +6456,15 @@ function answer(r){
     dc:was.dm?was.dm.length:0,
     dl:was.dm&&was.dm.length?Math.round((now-was.dm[was.dm.length-1])/864e5*100)/100:null,
     ix:idx,n:deck.length,
+    ...(rep[idx]?{rp:rep[idx].step+1}:{}),
     tz:new Date(now).getTimezoneOffset(),
     o:rmap(mode==="reading"?"writing":"reading")[hz]||"",
     ...(reviewing==="x"?(m=>m?{pk:m[0],pw:m[1]}:{})(pickMeta(hz)):{})});
   sess[r]++;
+  scheduleRepeat(hz,r,prev,was,everSolid);
   saveStore();
   idx++;
+  placeRepeat();
   if(idx<deck.length){renderCard();}
   else{endSession();}
 }
